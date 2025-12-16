@@ -60,183 +60,171 @@ cmd_setup() {
     done
 
     declare -A rotations scales pos_x pos_y
-    local configured=()
+    local enabled_displays=()
     local to_disable=()
 
     echo ""
-    echo "Let's configure each display one by one."
-    echo "(y)es = configure, (n)o = disable, (s)kip = leave unchanged"
+    echo "--- Step 1: Configure each display ---"
+    echo "(y)es = enable, (n)o = disable, (s)kip = leave unchanged"
     echo ""
 
+    # Configure each display (enable/disable, rotation, scale)
     for i in "${!outputs[@]}"; do
         local name="${outputs[$i]}"
         local info=$(get_outputs | jq -r '.[] | select(.name == "'"$name"'") | "\(.make) \(.model) (\(.current_mode.width)x\(.current_mode.height))"')
+        echo "Display $((i+1))/$count: $name ($info)"
 
-        echo "--- Display $((i+1))/$count: $name ($info) ---"
-
-        if [ ${#configured[@]} -eq 0 ]; then
-            # First display
-            read -r -p "Enable as primary? (y/n/s) [y]: " enable
-            enable=${enable:-y}
-            if [[ "$enable" == "n" || "$enable" == "N" ]]; then
-                echo "  Will be disabled"
-                to_disable+=("$name")
-                echo ""
-                continue
-            elif [[ "$enable" == "s" || "$enable" == "S" ]]; then
-                echo "  Skipped (unchanged)"
-                echo ""
-                continue
-            fi
-
-            read -r -p "  Rotation (0=normal, 90=right, 180=flip, 270=left) [0]: " rot
-            rot=${rot:-0}
-            case "$rot" in
-                0)   rotations[$name]="normal" ;;
-                90)  rotations[$name]="90" ;;
-                180) rotations[$name]="180" ;;
-                270) rotations[$name]="270" ;;
-                *)   rotations[$name]="normal" ;;
-            esac
-
-            read -r -p "  Scale (1, 1.5, 2, etc.) [1]: " scale
-            scales[$name]=${scale:-1}
-
-            pos_x[$name]=0
-            pos_y[$name]=0
-            configured+=("$name")
-            echo "  -> Primary at 0,0"
-        else
-            # Subsequent displays
-            read -r -p "Enable? (y/n/s) [y]: " enable
-            enable=${enable:-y}
-            if [[ "$enable" == "n" || "$enable" == "N" ]]; then
-                echo "  Will be disabled"
-                to_disable+=("$name")
-                echo ""
-                continue
-            elif [[ "$enable" == "s" || "$enable" == "S" ]]; then
-                echo "  Skipped (unchanged)"
-                echo ""
-                continue
-            fi
-
-            read -r -p "  Rotation (0=normal, 90=right, 180=flip, 270=left) [0]: " rot
-            rot=${rot:-0}
-            case "$rot" in
-                0)   rotations[$name]="normal" ;;
-                90)  rotations[$name]="90" ;;
-                180) rotations[$name]="180" ;;
-                270) rotations[$name]="270" ;;
-                *)   rotations[$name]="normal" ;;
-            esac
-
-            read -r -p "  Scale (1, 1.5, 2, etc.) [1]: " scale
-            scales[$name]=${scale:-1}
-
-            # Position - where is this display physically?
-            local ref_name="${configured[0]}"  # Default to primary
-            if [ ${#configured[@]} -gt 1 ]; then
-                echo "  Position relative to which display?"
-                for j in "${!configured[@]}"; do
-                    local ref="${configured[$j]}"
-                    local ref_info=$(get_outputs | jq -r '.[] | select(.name == "'"$ref"'") | "\(.model)"')
-                    echo "    $((j+1)). $ref ($ref_info)"
-                done
-                read -r -p "  Reference [1]: " ref_choice
-                ref_choice=${ref_choice:-1}
-                if ! [[ "$ref_choice" =~ ^[0-9]+$ ]]; then
-                    ref_choice=1
-                fi
-                ref_name="${configured[$((ref_choice-1))]}"
-            fi
-
-            local ref_info=$(get_outputs | jq -r '.[] | select(.name == "'"$ref_name"'") | "\(.model)"')
-            echo "  Where is $name relative to $ref_name ($ref_info)?"
-            read -r -p "  (l)eft, (r)ight, (a)bove, (b)elow [r]: " side
-            side=${side:-r}
-
-            # Calculate position
-            local ref_x=${pos_x[$ref_name]}
-            local ref_y=${pos_y[$ref_name]}
-            read ref_w ref_h <<< $(get_effective_size "$ref_name" "${rotations[$ref_name]}" "${scales[$ref_name]}")
-            read cur_w cur_h <<< $(get_effective_size "$name" "${rotations[$name]}" "${scales[$name]}")
-
-            case "$side" in
-                l|left)
-                    pos_x[$name]=$((ref_x - cur_w))
-                    # Ask for vertical alignment
-                    read -r -p "  Vertical align: (t)op, (c)enter, (b)ottom [b]: " valign
-                    valign=${valign:-b}
-                    case "$valign" in
-                        t|top)    pos_y[$name]=$ref_y ;;
-                        c|center) pos_y[$name]=$((ref_y + (ref_h - cur_h) / 2)) ;;
-                        *)        pos_y[$name]=$((ref_y + ref_h - cur_h)) ;;
-                    esac
-                    echo "  -> Placed LEFT of $ref_name"
-                    ;;
-                r|right)
-                    pos_x[$name]=$((ref_x + ref_w))
-                    # Ask for vertical alignment
-                    read -r -p "  Vertical align: (t)op, (c)enter, (b)ottom [b]: " valign
-                    valign=${valign:-b}
-                    case "$valign" in
-                        t|top)    pos_y[$name]=$ref_y ;;
-                        c|center) pos_y[$name]=$((ref_y + (ref_h - cur_h) / 2)) ;;
-                        *)        pos_y[$name]=$((ref_y + ref_h - cur_h)) ;;
-                    esac
-                    echo "  -> Placed RIGHT of $ref_name"
-                    ;;
-                a|above|t|top)
-                    pos_y[$name]=$((ref_y - cur_h))
-                    # Ask for horizontal alignment
-                    read -r -p "  Horizontal align: (l)eft, (c)enter, (r)ight [l]: " halign
-                    halign=${halign:-l}
-                    case "$halign" in
-                        r|right)  pos_x[$name]=$((ref_x + ref_w - cur_w)) ;;
-                        c|center) pos_x[$name]=$((ref_x + (ref_w - cur_w) / 2)) ;;
-                        *)        pos_x[$name]=$ref_x ;;
-                    esac
-                    echo "  -> Placed ABOVE $ref_name"
-                    ;;
-                b|below|bottom)
-                    pos_y[$name]=$((ref_y + ref_h))
-                    # Ask for horizontal alignment
-                    read -r -p "  Horizontal align: (l)eft, (c)enter, (r)ight [l]: " halign
-                    halign=${halign:-l}
-                    case "$halign" in
-                        r|right)  pos_x[$name]=$((ref_x + ref_w - cur_w)) ;;
-                        c|center) pos_x[$name]=$((ref_x + (ref_w - cur_w) / 2)) ;;
-                        *)        pos_x[$name]=$ref_x ;;
-                    esac
-                    echo "  -> Placed BELOW $ref_name"
-                    ;;
-            esac
-
-            configured+=("$name")
+        read -r -p "  Enable? (y/n/s) [y]: " enable
+        enable=${enable:-y}
+        if [[ "$enable" == "n" || "$enable" == "N" ]]; then
+            echo "  -> Will be disabled"
+            to_disable+=("$name")
+            echo ""
+            continue
+        elif [[ "$enable" == "s" || "$enable" == "S" ]]; then
+            echo "  -> Skipped (unchanged)"
+            echo ""
+            continue
         fi
+
+        read -r -p "  Rotation (0=normal, 90=right, 180=flip, 270=left) [0]: " rot
+        rot=${rot:-0}
+        case "$rot" in
+            0)   rotations[$name]="normal" ;;
+            90)  rotations[$name]="90" ;;
+            180) rotations[$name]="180" ;;
+            270) rotations[$name]="270" ;;
+            *)   rotations[$name]="normal" ;;
+        esac
+
+        read -r -p "  Scale (1, 1.5, 2, etc.) [1]: " scale
+        scales[$name]=${scale:-1}
+
+        enabled_displays+=("$name")
+        echo "  -> Enabled"
         echo ""
     done
 
-    if [ ${#configured[@]} -eq 0 ] && [ ${#to_disable[@]} -eq 0 ]; then
+    if [ ${#enabled_displays[@]} -eq 0 ]; then
+        if [ ${#to_disable[@]} -eq 0 ]; then
+            echo "No changes to apply!"
+            exit 0
+        fi
+        # Only disabling displays, no arrangement needed
+        echo "=== Applying configuration ==="
+        for name in "${to_disable[@]}"; do
+            swaymsg output "$name" disable
+            echo "  $name: disabled"
+        done
+        echo ""
+        read -r -p "Save as profile? (name or Enter to skip): " profile_name
+        if [ -n "$profile_name" ]; then
+            cmd_save "$profile_name"
+        fi
+        echo "Done!"
+        return
+    fi
+
+    # Step 2: Arrange displays (only if more than one enabled)
+    if [ ${#enabled_displays[@]} -gt 1 ]; then
+        echo "--- Step 2: Arrange displays ---"
+        echo ""
+        echo "Enabled displays:"
+        for i in "${!enabled_displays[@]}"; do
+            local name="${enabled_displays[$i]}"
+            local info=$(get_outputs | jq -r '.[] | select(.name == "'"$name"'") | "\(.model)"')
+            read w h <<< $(get_effective_size "$name" "${rotations[$name]}" "${scales[$name]}")
+            echo "  $((i+1)). $name ($info) - ${w}x${h}"
+        done
+
+        echo ""
+        echo "Enter the order from LEFT to RIGHT (comma-separated numbers)"
+        echo "Example: 2,1,3 means display 2 is leftmost, then 1, then 3"
+        local default_order=$(seq -s, 1 ${#enabled_displays[@]})
+        read -r -p "Order [$default_order]: " order_input
+        order_input=${order_input:-$default_order}
+
+        # Parse order into array
+        IFS=',' read -ra order_nums <<< "$order_input"
+        local arranged=()
+        for num in "${order_nums[@]}"; do
+            num=$(echo "$num" | tr -d ' ')  # trim spaces
+            if [[ "$num" =~ ^[0-9]+$ ]] && [ "$num" -ge 1 ] && [ "$num" -le ${#enabled_displays[@]} ]; then
+                arranged+=("${enabled_displays[$((num-1))]}")
+            fi
+        done
+
+        # If parsing failed, use default order
+        if [ ${#arranged[@]} -ne ${#enabled_displays[@]} ]; then
+            echo "  Invalid order, using default left-to-right"
+            arranged=("${enabled_displays[@]}")
+        fi
+
+        # Calculate positions based on arrangement
+        # First display starts at 0,0
+        local first_name="${arranged[0]}"
+        read first_w first_h <<< $(get_effective_size "$first_name" "${rotations[$first_name]}" "${scales[$first_name]}")
+        pos_x[$first_name]=0
+        pos_y[$first_name]=0
+        local x_pos=$first_w
+
+        # For each subsequent display, ask how it aligns with the previous one
+        for (( i=1; i<${#arranged[@]}; i++ )); do
+            local prev_name="${arranged[$((i-1))]}"
+            local curr_name="${arranged[$i]}"
+            local prev_info=$(get_outputs | jq -r '.[] | select(.name == "'"$prev_name"'") | "\(.model)"')
+            local curr_info=$(get_outputs | jq -r '.[] | select(.name == "'"$curr_name"'") | "\(.model)"')
+
+            read prev_w prev_h <<< $(get_effective_size "$prev_name" "${rotations[$prev_name]}" "${scales[$prev_name]}")
+            read curr_w curr_h <<< $(get_effective_size "$curr_name" "${rotations[$curr_name]}" "${scales[$curr_name]}")
+
+            echo ""
+            echo "How is $curr_name ($curr_info) aligned with $prev_name ($prev_info)?"
+            read -r -p "  (t)op, (c)enter, (b)ottom [b]: " valign
+            valign=${valign:-b}
+
+            pos_x[$curr_name]=$x_pos
+            local prev_y=${pos_y[$prev_name]}
+            case "$valign" in
+                t|top)    pos_y[$curr_name]=$prev_y ;;
+                c|center) pos_y[$curr_name]=$((prev_y + (prev_h - curr_h) / 2)) ;;
+                *)        pos_y[$curr_name]=$((prev_y + prev_h - curr_h)) ;;  # bottom
+            esac
+            x_pos=$((x_pos + curr_w))
+        done
+
+        # Normalize Y positions (shift so minimum Y is 0)
+        local min_y=0
+        for name in "${arranged[@]}"; do
+            [ "${pos_y[$name]}" -lt "$min_y" ] && min_y=${pos_y[$name]}
+        done
+        for name in "${arranged[@]}"; do
+            pos_y[$name]=$((pos_y[$name] - min_y))
+        done
+
+        # Show arrangement
+        echo ""
+        echo "Arrangement (left to right):"
+        for name in "${arranged[@]}"; do
+            local info=$(get_outputs | jq -r '.[] | select(.name == "'"$name"'") | "\(.model)"')
+            echo "  $name ($info) at ${pos_x[$name]},${pos_y[$name]}"
+        done
+    else
+        # Single display - just put at 0,0
+        local name="${enabled_displays[0]}"
+        pos_x[$name]=0
+        pos_y[$name]=0
+    fi
+
+    if [ ${#enabled_displays[@]} -eq 0 ] && [ ${#to_disable[@]} -eq 0 ]; then
         echo "No changes to apply!"
         exit 0
     fi
 
-    # Normalize positions (shift so minimum is 0)
-    local min_x=0 min_y=0
-    for name in "${configured[@]}"; do
-        [ "${pos_x[$name]}" -lt "$min_x" ] && min_x=${pos_x[$name]}
-        [ "${pos_y[$name]}" -lt "$min_y" ] && min_y=${pos_y[$name]}
-    done
-    for name in "${configured[@]}"; do
-        pos_x[$name]=$((pos_x[$name] - min_x))
-        pos_y[$name]=$((pos_y[$name] - min_y))
-    done
-
     # Apply settings
+    echo ""
     echo "=== Applying configuration ==="
-    for name in "${configured[@]}"; do
+    for name in "${enabled_displays[@]}"; do
         local x=${pos_x[$name]}
         local y=${pos_y[$name]}
         local rot="${rotations[$name]}"
