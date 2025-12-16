@@ -18,16 +18,23 @@ cmd_list() {
 }
 
 # Get effective dimensions (accounting for rotation and scale)
+# Uses rect.width and rect.height which already account for rotation
 get_effective_size() {
     local name="$1" rot="$2" scale="$3"
-    local w=$(get_outputs | jq -r '.[] | select(.name == "'"$name"'") | .current_mode.width')
-    local h=$(get_outputs | jq -r '.[] | select(.name == "'"$name"'") | .current_mode.height')
+
+    # Get native resolution
+    local native_w=$(get_outputs | jq -r '.[] | select(.name == "'"$name"'") | .current_mode.width')
+    local native_h=$(get_outputs | jq -r '.[] | select(.name == "'"$name"'") | .current_mode.height')
 
     # Swap dimensions if rotated 90 or 270
+    local w=$native_w
+    local h=$native_h
     if [ "$rot" = "90" ] || [ "$rot" = "270" ]; then
-        local tmp=$w; w=$h; h=$tmp
+        w=$native_h
+        h=$native_w
     fi
 
+    # Apply scale
     local eff_w=$(echo "$w / $scale" | bc)
     local eff_h=$(echo "$h / $scale" | bc)
     echo "$eff_w $eff_h"
@@ -254,9 +261,110 @@ cmd_setup() {
     echo "Done!"
 }
 
-# Mirror displays
+# Install wl-mirror from source (for Debian 12 and others without package)
+cmd_install_wl_mirror() {
+    if command -v wl-mirror &>/dev/null; then
+        echo "wl-mirror is already installed: $(which wl-mirror)"
+        return 0
+    fi
+
+    echo "wl-mirror not found. Installing from source..."
+
+    # Check for build dependencies
+    local missing_deps=()
+    for cmd in git cmake; do
+        if ! command -v "$cmd" &>/dev/null; then
+            missing_deps+=("$cmd")
+        fi
+    done
+
+    if [ ${#missing_deps[@]} -gt 0 ]; then
+        echo "Missing build tools: ${missing_deps[*]}"
+        echo "Installing build dependencies..."
+        sudo apt update
+        sudo apt install -y git cmake libwayland-dev libepoxy-dev
+    fi
+
+    local build_dir="/tmp/wl-mirror-build"
+    local src_dir="$build_dir/wl-mirror"
+    rm -rf "$build_dir"
+    mkdir -p "$build_dir"
+
+    echo "Cloning wl-mirror..."
+    git clone --recurse-submodules https://github.com/Ferdi265/wl-mirror.git "$src_dir"
+
+    echo "Building..."
+    cmake -B "$src_dir/build" -S "$src_dir" -DCMAKE_INSTALL_PREFIX=/usr/local
+    cmake --build "$src_dir/build"
+
+    echo "Installing..."
+    sudo cmake --install "$src_dir/build"
+    sudo ldconfig
+
+    rm -rf "$build_dir"
+
+    if command -v wl-mirror &>/dev/null; then
+        echo "wl-mirror installed successfully!"
+    else
+        echo "Installation may have succeeded but wl-mirror not in PATH."
+        echo "Try: /usr/local/bin/wl-mirror"
+    fi
+}
+
+# Find sway-mirror binary
+find_sway_mirror() {
+    # Check if in PATH
+    if command -v sway-mirror &>/dev/null; then
+        echo "sway-mirror"
+        return
+    fi
+    # Check relative to this script
+    local script_dir="$(dirname "$0")"
+    local rel_path="$script_dir/../sway-mirror/target/release/sway-mirror"
+    if [ -x "$rel_path" ]; then
+        echo "$rel_path"
+        return
+    fi
+    # Not found
+    echo ""
+}
+
+# Install sway-mirror from GitHub
+install_sway_mirror() {
+    local script_dir="$(dirname "$0")"
+    local install_dir="$script_dir/../sway-mirror"
+
+    # Check for cargo
+    if ! command -v cargo &>/dev/null; then
+        echo "ERROR: Rust/Cargo is required to build sway-mirror"
+        echo "Install Rust from https://rustup.rs/"
+        return 1
+    fi
+
+    echo "Installing sway-mirror..."
+
+    # Clone if not exists
+    if [ ! -d "$install_dir" ]; then
+        echo "Cloning sway-mirror..."
+        git clone https://github.com/pescheckit/sway-mirror.git "$install_dir" || return 1
+    fi
+
+    # Build
+    echo "Building sway-mirror (this may take a minute)..."
+    (cd "$install_dir" && cargo build --release) || return 1
+
+    if [ -x "$install_dir/target/release/sway-mirror" ]; then
+        echo "sway-mirror installed successfully!"
+        return 0
+    else
+        echo "Build failed"
+        return 1
+    fi
+}
+
+# Mirror displays using sway-mirror
 cmd_mirror() {
-    local target="$1"
+    local source="$1"
     local outputs=($(get_outputs | jq -r '.[].name'))
     local count=${#outputs[@]}
 
@@ -265,25 +373,77 @@ cmd_mirror() {
         exit 1
     fi
 
-    # If no target, show menu
-    if [ -z "$target" ]; then
-        echo "Select display to mirror TO:"
+    # Find sway-mirror binary
+    local sway_mirror_bin=$(find_sway_mirror)
+    if [ -z "$sway_mirror_bin" ]; then
+        echo "sway-mirror not found."
+        read -r -p "Install it now? (y/n) [y]: " install
+        install=${install:-y}
+        if [[ "$install" == "y" || "$install" == "Y" ]]; then
+            install_sway_mirror || exit 1
+            sway_mirror_bin=$(find_sway_mirror)
+        else
+            echo "Mirroring requires sway-mirror. Aborting."
+            exit 1
+        fi
+    fi
+
+    # If no source specified, show menu
+    if [ -z "$source" ]; then
+        echo "Select source display (to mirror FROM):"
         for i in "${!outputs[@]}"; do
             local name="${outputs[$i]}"
-            local info=$(get_outputs | jq -r '.[] | select(.name == "'"$name"'") | "\(.model)"')
-            echo "  $((i+1)). $name ($info)"
+            local info=$(get_outputs | jq -r '.[] | select(.name == "'"$name"'") | "\(.make) \(.model) (\(.current_mode.width)x\(.current_mode.height))"')
+            echo "  $((i+1)). $name - $info"
         done
-        read -r -p "Choice: " choice
+        read -r -p "Choice [1]: " choice
+        choice=${choice:-1}
         if ! [[ "$choice" =~ ^[0-9]+$ ]]; then
             choice=1
         fi
-        target="${outputs[$((choice-1))]}"
+        source="${outputs[$((choice-1))]}"
     fi
 
-    echo "Mirroring all displays to $target"
+    # Save current positions before mirroring (for unmirror to restore)
+    get_outputs | jq '[.[] | {name: .name, x: .rect.x, y: .rect.y, scale: .scale, transform: .transform}]' > "$PROFILE_DIR/.pre_mirror.json"
+
+    # Clear any existing pids file
+    rm -f "$PROFILE_DIR/.mirror_pids"
+
+    echo "Mirroring $source to all other displays..."
+
+    # Build target list
+    local targets=()
     for name in "${outputs[@]}"; do
-        swaymsg output "$name" enable pos 0 0 transform normal
+        if [ "$name" != "$source" ]; then
+            echo "  $name <- mirroring $source"
+            targets+=("--to" "$name")
+        fi
     done
+
+    # Run sway-mirror (mirrors to all targets in one process)
+    "$sway_mirror_bin" "$source" "${targets[@]}" &
+    echo $! > "$PROFILE_DIR/.mirror_pids"
+
+    echo ""
+    echo "Mirroring active. Run 'sway-displays unmirror' to stop."
+}
+
+# Stop mirroring
+cmd_unmirror() {
+    local sway_mirror_bin=$(find_sway_mirror)
+
+    if [ -n "$sway_mirror_bin" ]; then
+        # Use sway-mirror's built-in stop (handles workspace restoration)
+        "$sway_mirror_bin" --stop
+    else
+        # Fallback: kill any sway-mirror processes
+        echo "Stopping sway-mirror..."
+        pkill -f "sway-mirror" 2>/dev/null && echo "Stopped." || echo "No sway-mirror process found."
+    fi
+
+    # Clean up our tracking files
+    rm -f "$PROFILE_DIR/.mirror_pids" "$PROFILE_DIR/.pre_mirror.json"
 }
 
 # Save current config as profile
@@ -353,16 +513,18 @@ cmd_load() {
 cmd_help() {
     echo "Display Manager for Sway"
     echo ""
-    echo "Usage: displays.sh <command> [args]"
+    echo "Usage: sway-displays <command> [args]"
     echo ""
     echo "Commands:"
-    echo "  list              Show connected displays"
-    echo "  setup             Interactive setup wizard"
-    echo "  mirror [output]   Mirror all displays"
-    echo "  save [name]       Save current config as profile"
-    echo "  load [name]       Load a saved profile"
-    echo "  profiles          List saved profiles"
-    echo "  help              Show this help"
+    echo "  list                  Show connected displays"
+    echo "  setup                 Interactive setup wizard"
+    echo "  mirror [output]       Mirror source display to all others"
+    echo "  unmirror              Stop mirroring"
+    echo "  install-wl-mirror     Install wl-mirror from source"
+    echo "  save [name]           Save current config as profile"
+    echo "  load [name]           Load a saved profile"
+    echo "  profiles              List saved profiles"
+    echo "  help                  Show this help"
     echo ""
     echo "Profiles are saved in: $PROFILE_DIR"
 }
@@ -377,13 +539,15 @@ cmd_profiles() {
 
 # Main
 case "${1:-help}" in
-    list)     cmd_list ;;
-    setup)    cmd_setup ;;
-    mirror)   cmd_mirror "$2" ;;
-    save)     cmd_save "$2" ;;
-    load)     cmd_load "$2" ;;
-    profiles) cmd_profiles ;;
-    help)     cmd_help ;;
+    list)              cmd_list ;;
+    setup)             cmd_setup ;;
+    mirror)            cmd_mirror "$2" ;;
+    unmirror)          cmd_unmirror ;;
+    install-wl-mirror) cmd_install_wl_mirror ;;
+    save)              cmd_save "$2" ;;
+    load)              cmd_load "$2" ;;
+    profiles)          cmd_profiles ;;
+    help)              cmd_help ;;
     *)
         # Try to load as profile name
         if [ -f "$PROFILE_DIR/$1.json" ]; then

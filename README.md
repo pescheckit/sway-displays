@@ -25,6 +25,21 @@ sudo ln -s "$(pwd)/sway-displays/sway-displays" /usr/local/bin/sway-displays
 - [Sway](https://swaywm.org/) (Wayland compositor)
 - `jq` (JSON processor)
 - `bc` (calculator)
+- [sway-mirror](https://github.com/pescheckit/sway-mirror) (only required for mirroring)
+
+### Installing sway-mirror
+
+```bash
+# Clone and build sway-mirror
+git clone https://github.com/pescheckit/sway-mirror.git
+cd sway-mirror
+cargo build --release
+
+# Optional: install to PATH
+sudo cp target/release/sway-mirror /usr/local/bin/
+```
+
+If `sway-mirror` is not in your PATH, place the `sway-mirror` repository next to `sway-displays` and it will be found automatically.
 
 ## Usage
 
