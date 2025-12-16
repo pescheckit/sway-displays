@@ -12,7 +12,7 @@ A simple interactive display manager for Sway.
 ## Installation
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/sway-displays.git
+git clone https://github.com/pescheckit/sway-displays.git
 cd sway-displays
 chmod +x sway-displays
 sudo ln -s "$(pwd)/sway-displays" /usr/local/bin/sway-displays

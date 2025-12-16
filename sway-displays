@@ -249,56 +249,6 @@ cmd_setup() {
     echo "Done!"
 }
 
-# Install wl-mirror from source (for Debian 12 and others without package)
-cmd_install_wl_mirror() {
-    if command -v wl-mirror &>/dev/null; then
-        echo "wl-mirror is already installed: $(which wl-mirror)"
-        return 0
-    fi
-
-    echo "wl-mirror not found. Installing from source..."
-
-    # Check for build dependencies
-    local missing_deps=()
-    for cmd in git cmake; do
-        if ! command -v "$cmd" &>/dev/null; then
-            missing_deps+=("$cmd")
-        fi
-    done
-
-    if [ ${#missing_deps[@]} -gt 0 ]; then
-        echo "Missing build tools: ${missing_deps[*]}"
-        echo "Installing build dependencies..."
-        sudo apt update
-        sudo apt install -y git cmake libwayland-dev libepoxy-dev
-    fi
-
-    local build_dir="/tmp/wl-mirror-build"
-    local src_dir="$build_dir/wl-mirror"
-    rm -rf "$build_dir"
-    mkdir -p "$build_dir"
-
-    echo "Cloning wl-mirror..."
-    git clone --recurse-submodules https://github.com/Ferdi265/wl-mirror.git "$src_dir"
-
-    echo "Building..."
-    cmake -B "$src_dir/build" -S "$src_dir" -DCMAKE_INSTALL_PREFIX=/usr/local
-    cmake --build "$src_dir/build"
-
-    echo "Installing..."
-    sudo cmake --install "$src_dir/build"
-    sudo ldconfig
-
-    rm -rf "$build_dir"
-
-    if command -v wl-mirror &>/dev/null; then
-        echo "wl-mirror installed successfully!"
-    else
-        echo "Installation may have succeeded but wl-mirror not in PATH."
-        echo "Try: /usr/local/bin/wl-mirror"
-    fi
-}
-
 # Find sway-mirror binary
 find_sway_mirror() {
     # Check if in PATH
@@ -511,7 +461,6 @@ cmd_help() {
     echo "  setup                 Interactive setup wizard"
     echo "  mirror [output]       Mirror source display to all others"
     echo "  unmirror              Stop mirroring"
-    echo "  install-wl-mirror     Install wl-mirror from source"
     echo "  save [name]           Save current config as profile"
     echo "  load [name]           Load a saved profile"
     echo "  profiles              List saved profiles"
@@ -534,7 +483,6 @@ case "${1:-help}" in
     setup)             cmd_setup ;;
     mirror)            cmd_mirror "$2" ;;
     unmirror)          cmd_unmirror ;;
-    install-wl-mirror) cmd_install_wl_mirror ;;
     save)              cmd_save "$2" ;;
     load)              cmd_load "$2" ;;
     profiles)          cmd_profiles ;;
