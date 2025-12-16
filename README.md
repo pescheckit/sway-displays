@@ -16,7 +16,7 @@ sudo ln -s "$(pwd)/sway-displays" /usr/local/bin/sway-displays
 - Sway
 - `jq`
 - `bc`
-- Rust/Cargo (only for mirroring)
+- [Rust/Cargo](https://rustup.rs/) + wayland-dev libs (only for mirroring, see [sway-mirror](https://github.com/pescheckit/sway-mirror))
 
 ## Commands
 
