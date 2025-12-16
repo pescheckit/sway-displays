@@ -318,11 +318,10 @@ find_sway_mirror() {
         echo "sway-mirror"
         return
     fi
-    # Check relative to this script
-    local script_dir="$(dirname "$0")"
-    local rel_path="$script_dir/../sway-mirror/target/release/sway-mirror"
-    if [ -x "$rel_path" ]; then
-        echo "$rel_path"
+    # Check user install location
+    local user_path="${XDG_DATA_HOME:-$HOME/.local/share}/sway-mirror/target/release/sway-mirror"
+    if [ -x "$user_path" ]; then
+        echo "$user_path"
         return
     fi
     # Not found
@@ -331,8 +330,7 @@ find_sway_mirror() {
 
 # Install sway-mirror from GitHub
 install_sway_mirror() {
-    local script_dir="$(dirname "$0")"
-    local install_dir="$script_dir/../sway-mirror"
+    local install_dir="${XDG_DATA_HOME:-$HOME/.local/share}/sway-mirror"
 
     # Check for cargo
     if ! command -v cargo &>/dev/null; then
@@ -377,6 +375,11 @@ cmd_mirror() {
     local sway_mirror_bin=$(find_sway_mirror)
     if [ -z "$sway_mirror_bin" ]; then
         echo "sway-mirror not found."
+        if ! command -v cargo &>/dev/null; then
+            echo "Rust/Cargo is required to build sway-mirror."
+            echo "Install Rust from https://rustup.rs/"
+            exit 1
+        fi
         read -r -p "Install it now? (y/n) [y]: " install
         install=${install:-y}
         if [[ "$install" == "y" || "$install" == "Y" ]]; then
