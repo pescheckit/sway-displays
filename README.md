@@ -12,13 +12,13 @@ A simple interactive display manager for Sway.
 ## Installation
 
 ```bash
-# Clone the repository
 git clone https://github.com/YOUR_USERNAME/sway-displays.git
-
-# Make it executable and add to your PATH
-chmod +x sway-displays/sway-displays
-sudo ln -s "$(pwd)/sway-displays/sway-displays" /usr/local/bin/sway-displays
+cd sway-displays
+chmod +x sway-displays
+sudo ln -s "$(pwd)/sway-displays" /usr/local/bin/sway-displays
 ```
+
+This clones the repository, makes the script executable, and creates a symlink so you can run `sway-displays` from anywhere.
 
 ## Dependencies
 
