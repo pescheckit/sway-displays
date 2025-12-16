@@ -1,0 +1,397 @@
+#!/bin/bash
+
+# Generic display manager for Sway
+# Usage: displays.sh <command> [args]
+
+PROFILE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/displays"
+mkdir -p "$PROFILE_DIR"
+
+# Get connected outputs as JSON
+get_outputs() {
+    swaymsg -t get_outputs -r
+}
+
+# List connected displays
+cmd_list() {
+    echo "Connected displays:"
+    get_outputs | jq -r '.[] | "  \(.name) - \(.make) \(.model) (\(.current_mode.width)x\(.current_mode.height))"'
+}
+
+# Get effective dimensions (accounting for rotation and scale)
+get_effective_size() {
+    local name="$1" rot="$2" scale="$3"
+    local w=$(get_outputs | jq -r '.[] | select(.name == "'"$name"'") | .current_mode.width')
+    local h=$(get_outputs | jq -r '.[] | select(.name == "'"$name"'") | .current_mode.height')
+
+    # Swap dimensions if rotated 90 or 270
+    if [ "$rot" = "90" ] || [ "$rot" = "270" ]; then
+        local tmp=$w; w=$h; h=$tmp
+    fi
+
+    local eff_w=$(echo "$w / $scale" | bc)
+    local eff_h=$(echo "$h / $scale" | bc)
+    echo "$eff_w $eff_h"
+}
+
+# Interactive setup wizard
+cmd_setup() {
+    local outputs=($(get_outputs | jq -r '.[].name'))
+    local count=${#outputs[@]}
+
+    if [ "$count" -eq 0 ]; then
+        echo "No displays found"
+        exit 1
+    fi
+
+    echo "=== Display Setup Wizard ==="
+    echo ""
+    echo "Found $count display(s):"
+    for i in "${!outputs[@]}"; do
+        local name="${outputs[$i]}"
+        local info=$(get_outputs | jq -r '.[] | select(.name == "'"$name"'") | "\(.make) \(.model) (\(.current_mode.width)x\(.current_mode.height))"')
+        echo "  $((i+1)). $name - $info"
+    done
+
+    declare -A rotations scales pos_x pos_y
+    local configured=()
+    local to_disable=()
+
+    echo ""
+    echo "Let's configure each display one by one."
+    echo "(y)es = configure, (n)o = disable, (s)kip = leave unchanged"
+    echo ""
+
+    for i in "${!outputs[@]}"; do
+        local name="${outputs[$i]}"
+        local info=$(get_outputs | jq -r '.[] | select(.name == "'"$name"'") | "\(.make) \(.model) (\(.current_mode.width)x\(.current_mode.height))"')
+
+        echo "--- Display $((i+1))/$count: $name ($info) ---"
+
+        if [ ${#configured[@]} -eq 0 ]; then
+            # First display
+            read -r -p "Enable as primary? (y/n/s) [y]: " enable
+            enable=${enable:-y}
+            if [[ "$enable" == "n" || "$enable" == "N" ]]; then
+                echo "  Will be disabled"
+                to_disable+=("$name")
+                echo ""
+                continue
+            elif [[ "$enable" == "s" || "$enable" == "S" ]]; then
+                echo "  Skipped (unchanged)"
+                echo ""
+                continue
+            fi
+
+            read -r -p "  Rotation (0=normal, 90=right, 180=flip, 270=left) [0]: " rot
+            rot=${rot:-0}
+            case "$rot" in
+                0)   rotations[$name]="normal" ;;
+                90)  rotations[$name]="90" ;;
+                180) rotations[$name]="180" ;;
+                270) rotations[$name]="270" ;;
+                *)   rotations[$name]="normal" ;;
+            esac
+
+            read -r -p "  Scale (1, 1.5, 2, etc.) [1]: " scale
+            scales[$name]=${scale:-1}
+
+            pos_x[$name]=0
+            pos_y[$name]=0
+            configured+=("$name")
+            echo "  -> Primary at 0,0"
+        else
+            # Subsequent displays
+            read -r -p "Enable? (y/n/s) [y]: " enable
+            enable=${enable:-y}
+            if [[ "$enable" == "n" || "$enable" == "N" ]]; then
+                echo "  Will be disabled"
+                to_disable+=("$name")
+                echo ""
+                continue
+            elif [[ "$enable" == "s" || "$enable" == "S" ]]; then
+                echo "  Skipped (unchanged)"
+                echo ""
+                continue
+            fi
+
+            read -r -p "  Rotation (0=normal, 90=right, 180=flip, 270=left) [0]: " rot
+            rot=${rot:-0}
+            case "$rot" in
+                0)   rotations[$name]="normal" ;;
+                90)  rotations[$name]="90" ;;
+                180) rotations[$name]="180" ;;
+                270) rotations[$name]="270" ;;
+                *)   rotations[$name]="normal" ;;
+            esac
+
+            read -r -p "  Scale (1, 1.5, 2, etc.) [1]: " scale
+            scales[$name]=${scale:-1}
+
+            # Position - where is this display physically?
+            local ref_name="${configured[0]}"  # Default to primary
+            if [ ${#configured[@]} -gt 1 ]; then
+                echo "  Position relative to which display?"
+                for j in "${!configured[@]}"; do
+                    local ref="${configured[$j]}"
+                    local ref_info=$(get_outputs | jq -r '.[] | select(.name == "'"$ref"'") | "\(.model)"')
+                    echo "    $((j+1)). $ref ($ref_info)"
+                done
+                read -r -p "  Reference [1]: " ref_choice
+                ref_choice=${ref_choice:-1}
+                if ! [[ "$ref_choice" =~ ^[0-9]+$ ]]; then
+                    ref_choice=1
+                fi
+                ref_name="${configured[$((ref_choice-1))]}"
+            fi
+
+            local ref_info=$(get_outputs | jq -r '.[] | select(.name == "'"$ref_name"'") | "\(.model)"')
+            echo "  Where is $name relative to $ref_name ($ref_info)?"
+            read -r -p "  (l)eft, (r)ight, (a)bove, (b)elow [r]: " side
+            side=${side:-r}
+
+            # Calculate position
+            local ref_x=${pos_x[$ref_name]}
+            local ref_y=${pos_y[$ref_name]}
+            read ref_w ref_h <<< $(get_effective_size "$ref_name" "${rotations[$ref_name]}" "${scales[$ref_name]}")
+            read cur_w cur_h <<< $(get_effective_size "$name" "${rotations[$name]}" "${scales[$name]}")
+
+            case "$side" in
+                l|left)
+                    pos_x[$name]=$((ref_x - cur_w))
+                    # Ask for vertical alignment
+                    read -r -p "  Vertical align: (t)op, (c)enter, (b)ottom [b]: " valign
+                    valign=${valign:-b}
+                    case "$valign" in
+                        t|top)    pos_y[$name]=$ref_y ;;
+                        c|center) pos_y[$name]=$((ref_y + (ref_h - cur_h) / 2)) ;;
+                        *)        pos_y[$name]=$((ref_y + ref_h - cur_h)) ;;
+                    esac
+                    echo "  -> Placed LEFT of $ref_name"
+                    ;;
+                r|right)
+                    pos_x[$name]=$((ref_x + ref_w))
+                    # Ask for vertical alignment
+                    read -r -p "  Vertical align: (t)op, (c)enter, (b)ottom [b]: " valign
+                    valign=${valign:-b}
+                    case "$valign" in
+                        t|top)    pos_y[$name]=$ref_y ;;
+                        c|center) pos_y[$name]=$((ref_y + (ref_h - cur_h) / 2)) ;;
+                        *)        pos_y[$name]=$((ref_y + ref_h - cur_h)) ;;
+                    esac
+                    echo "  -> Placed RIGHT of $ref_name"
+                    ;;
+                a|above|t|top)
+                    pos_y[$name]=$((ref_y - cur_h))
+                    # Ask for horizontal alignment
+                    read -r -p "  Horizontal align: (l)eft, (c)enter, (r)ight [l]: " halign
+                    halign=${halign:-l}
+                    case "$halign" in
+                        r|right)  pos_x[$name]=$((ref_x + ref_w - cur_w)) ;;
+                        c|center) pos_x[$name]=$((ref_x + (ref_w - cur_w) / 2)) ;;
+                        *)        pos_x[$name]=$ref_x ;;
+                    esac
+                    echo "  -> Placed ABOVE $ref_name"
+                    ;;
+                b|below|bottom)
+                    pos_y[$name]=$((ref_y + ref_h))
+                    # Ask for horizontal alignment
+                    read -r -p "  Horizontal align: (l)eft, (c)enter, (r)ight [l]: " halign
+                    halign=${halign:-l}
+                    case "$halign" in
+                        r|right)  pos_x[$name]=$((ref_x + ref_w - cur_w)) ;;
+                        c|center) pos_x[$name]=$((ref_x + (ref_w - cur_w) / 2)) ;;
+                        *)        pos_x[$name]=$ref_x ;;
+                    esac
+                    echo "  -> Placed BELOW $ref_name"
+                    ;;
+            esac
+
+            configured+=("$name")
+        fi
+        echo ""
+    done
+
+    if [ ${#configured[@]} -eq 0 ] && [ ${#to_disable[@]} -eq 0 ]; then
+        echo "No changes to apply!"
+        exit 0
+    fi
+
+    # Normalize positions (shift so minimum is 0)
+    local min_x=0 min_y=0
+    for name in "${configured[@]}"; do
+        [ "${pos_x[$name]}" -lt "$min_x" ] && min_x=${pos_x[$name]}
+        [ "${pos_y[$name]}" -lt "$min_y" ] && min_y=${pos_y[$name]}
+    done
+    for name in "${configured[@]}"; do
+        pos_x[$name]=$((pos_x[$name] - min_x))
+        pos_y[$name]=$((pos_y[$name] - min_y))
+    done
+
+    # Apply settings
+    echo "=== Applying configuration ==="
+    for name in "${configured[@]}"; do
+        local x=${pos_x[$name]}
+        local y=${pos_y[$name]}
+        local rot="${rotations[$name]}"
+        local scale="${scales[$name]}"
+        echo "  $name: pos ${x},${y}, rotation $rot, scale $scale"
+        swaymsg output "$name" enable pos "$x" "$y" scale "$scale" transform "$rot"
+    done
+
+    # Disable outputs explicitly marked for disable
+    for name in "${to_disable[@]}"; do
+        swaymsg output "$name" disable
+        echo "  $name: disabled"
+    done
+
+    # Ask to save
+    echo ""
+    read -r -p "Save as profile? (name or Enter to skip): " profile_name
+    if [ -n "$profile_name" ]; then
+        cmd_save "$profile_name"
+    fi
+
+    echo "Done!"
+}
+
+# Mirror displays
+cmd_mirror() {
+    local target="$1"
+    local outputs=($(get_outputs | jq -r '.[].name'))
+    local count=${#outputs[@]}
+
+    if [ "$count" -lt 2 ]; then
+        echo "Need at least 2 displays to mirror"
+        exit 1
+    fi
+
+    # If no target, show menu
+    if [ -z "$target" ]; then
+        echo "Select display to mirror TO:"
+        for i in "${!outputs[@]}"; do
+            local name="${outputs[$i]}"
+            local info=$(get_outputs | jq -r '.[] | select(.name == "'"$name"'") | "\(.model)"')
+            echo "  $((i+1)). $name ($info)"
+        done
+        read -r -p "Choice: " choice
+        if ! [[ "$choice" =~ ^[0-9]+$ ]]; then
+            choice=1
+        fi
+        target="${outputs[$((choice-1))]}"
+    fi
+
+    echo "Mirroring all displays to $target"
+    for name in "${outputs[@]}"; do
+        swaymsg output "$name" enable pos 0 0 transform normal
+    done
+}
+
+# Save current config as profile
+cmd_save() {
+    local name="$1"
+    if [ -z "$name" ]; then
+        read -r -p "Profile name: " name
+    fi
+
+    local file="$PROFILE_DIR/$name.json"
+
+    # Check if profile already exists
+    if [ -f "$file" ]; then
+        echo "Profile '$name' already exists."
+        read -r -p "Overwrite? (y/n) [n]: " overwrite
+        if [[ "$overwrite" != "y" && "$overwrite" != "Y" ]]; then
+            echo "Cancelled."
+            return 1
+        fi
+    fi
+
+    get_outputs | jq '[.[] | {name: .name, x: .rect.x, y: .rect.y, scale: .scale, transform: .transform, enabled: .dpms, make: .make, model: .model}]' > "$file"
+
+    echo "Saved to $file"
+}
+
+# Load a profile
+cmd_load() {
+    local name="$1"
+
+    if [ -z "$name" ]; then
+        echo "Available profiles:"
+        for f in "$PROFILE_DIR"/*.json; do
+            [ -f "$f" ] && echo "  $(basename "$f" .json)"
+        done
+        echo ""
+        read -r -p "Profile name: " name
+    fi
+
+    local file="$PROFILE_DIR/$name.json"
+    if [ -f "$file" ]; then
+        echo "Loading profile: $name"
+        # Read JSON and apply each output config
+        jq -c '.[]' "$file" | while read -r output; do
+            local oname=$(echo "$output" | jq -r '.name')
+            local x=$(echo "$output" | jq -r '.x')
+            local y=$(echo "$output" | jq -r '.y')
+            local scale=$(echo "$output" | jq -r '.scale')
+            local transform=$(echo "$output" | jq -r '.transform')
+            local enabled=$(echo "$output" | jq -r '.enabled')
+
+            if [ "$enabled" = "true" ]; then
+                echo "  $oname: pos $x,$y scale $scale transform $transform"
+                swaymsg output "$oname" enable pos "$x" "$y" scale "$scale" transform "$transform"
+            else
+                echo "  $oname: disabled"
+                swaymsg output "$oname" disable
+            fi
+        done
+    else
+        echo "Profile not found: $name"
+        exit 1
+    fi
+}
+
+# Show help
+cmd_help() {
+    echo "Display Manager for Sway"
+    echo ""
+    echo "Usage: displays.sh <command> [args]"
+    echo ""
+    echo "Commands:"
+    echo "  list              Show connected displays"
+    echo "  setup             Interactive setup wizard"
+    echo "  mirror [output]   Mirror all displays"
+    echo "  save [name]       Save current config as profile"
+    echo "  load [name]       Load a saved profile"
+    echo "  profiles          List saved profiles"
+    echo "  help              Show this help"
+    echo ""
+    echo "Profiles are saved in: $PROFILE_DIR"
+}
+
+# List profiles
+cmd_profiles() {
+    echo "Saved profiles:"
+    for f in "$PROFILE_DIR"/*.json; do
+        [ -f "$f" ] && echo "  $(basename "$f" .json)"
+    done 2>/dev/null
+}
+
+# Main
+case "${1:-help}" in
+    list)     cmd_list ;;
+    setup)    cmd_setup ;;
+    mirror)   cmd_mirror "$2" ;;
+    save)     cmd_save "$2" ;;
+    load)     cmd_load "$2" ;;
+    profiles) cmd_profiles ;;
+    help)     cmd_help ;;
+    *)
+        # Try to load as profile name
+        if [ -f "$PROFILE_DIR/$1.json" ]; then
+            cmd_load "$1"
+        else
+            echo "Unknown command: $1"
+            cmd_help
+            exit 1
+        fi
+        ;;
+esac
