@@ -655,20 +655,43 @@ cmd_auto() {
 
 # Watch for display changes and auto-apply profiles
 cmd_watch() {
-    echo "Watching for display changes... (Ctrl+C to stop)"
-    echo "PID: $$"
+    local log_file="$PROFILE_DIR/watch.log"
+
+    # Kill any existing watch process first
+    if [ -f "$PROFILE_DIR/.watch_pid" ]; then
+        local old_pid=$(cat "$PROFILE_DIR/.watch_pid")
+        if [ "$old_pid" != "$$" ] && kill -0 "$old_pid" 2>/dev/null; then
+            kill "$old_pid" 2>/dev/null
+            sleep 0.5
+        fi
+    fi
+
+    echo "Watching for display changes... (Ctrl+C to stop)" | tee "$log_file"
+    echo "PID: $$" | tee -a "$log_file"
+    echo "Started at: $(date)" >> "$log_file"
 
     # Save PID for stopping later
     echo $$ > "$PROFILE_DIR/.watch_pid"
 
     # Initial auto-apply
-    cmd_auto 2>/dev/null
+    cmd_auto 2>&1 | tee -a "$log_file"
+
+    # Track last apply time to avoid loops (use file since subshell)
+    local last_apply_file="$PROFILE_DIR/.last_apply"
+    echo "0" > "$last_apply_file"
 
     # Keep watching (restart subscription if it exits)
     while true; do
         swaymsg -t subscribe '["output"]' | while read -r event; do
-            echo ""
-            echo "Display change detected, waiting for displays to settle..."
+            # Debounce: ignore events within 5 seconds of last apply
+            local last_apply=$(cat "$last_apply_file" 2>/dev/null || echo 0)
+            local now=$(date +%s)
+            if [ $((now - last_apply)) -lt 5 ]; then
+                continue
+            fi
+
+            echo "" | tee -a "$log_file"
+            echo "Display change detected at $(date), waiting for displays to settle..." | tee -a "$log_file"
 
             # Wait for displays to stabilize (max 10 seconds, check every second)
             local prev_sig=""
@@ -676,17 +699,18 @@ cmd_watch() {
                 sleep 1
                 local curr_sig=$(get_current_signature)
                 if [ "$curr_sig" = "$prev_sig" ]; then
-                    echo "Displays stable after ${i}s"
+                    echo "Displays stable after ${i}s" | tee -a "$log_file"
                     break
                 fi
                 prev_sig=$curr_sig
             done
 
             # Auto-apply matching profile
-            cmd_auto
+            cmd_auto 2>&1 | tee -a "$log_file"
+            date +%s > "$last_apply_file"
         done
-        echo "Subscription ended, restarting..."
-        sleep 1
+        echo "Subscription ended, restarting..." | tee -a "$log_file"
+        sleep 2
     done
 
     rm -f "$PROFILE_DIR/.watch_pid"

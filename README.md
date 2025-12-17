@@ -70,8 +70,10 @@ Port names like `DP-1` or `DP-7` can change between docks - hardware IDs don't.
 
 Add to your sway config:
 ```
-exec sway-displays watch
+exec_always /usr/local/bin/sway-displays watch
 ```
+
+This starts the watch daemon and restarts it on config reload. It runs in the background and automatically applies matching profiles when displays are plugged/unplugged. The daemon automatically kills any previous instance before starting.
 
 ## Profiles
 
