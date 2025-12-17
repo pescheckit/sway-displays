@@ -177,11 +177,7 @@ jobs:
           mkdir -p ~/.ssh
           echo "$AUR_SSH_KEY" > ~/.ssh/aur
           chmod 600 ~/.ssh/aur
-          cat >> ~/.ssh/config << 'SSHEOF'
-Host aur.archlinux.org
-  IdentityFile ~/.ssh/aur
-  User aur
-SSHEOF
+          printf '%s\n' "Host aur.archlinux.org" "  IdentityFile ~/.ssh/aur" "  User aur" >> ~/.ssh/config
           ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
 
           # Clone AUR repo
@@ -196,24 +192,24 @@ SSHEOF
           sed -i "s|source=.*|source=(\"sway-displays-${{ env.VERSION }}.tar.gz::https://github.com/pescheckit/sway-displays/archive/refs/tags/v${{ env.VERSION }}.tar.gz\")|" PKGBUILD
 
           # Generate .SRCINFO
-          cat > .SRCINFO << SRCEOF
-pkgbase = sway-displays
-	pkgdesc = Display manager for Sway window manager
-	pkgver = ${{ env.VERSION }}
-	pkgrel = 1
-	url = https://github.com/pescheckit/sway-displays
-	arch = any
-	license = MIT
-	depends = bash
-	depends = jq
-	depends = bc
-	depends = sway
-	optdepends = sway-mirror: for display mirroring support
-	source = sway-displays-${{ env.VERSION }}.tar.gz::https://github.com/pescheckit/sway-displays/archive/refs/tags/v${{ env.VERSION }}.tar.gz
-	sha256sums = SKIP
-
-pkgname = sway-displays
-SRCEOF
+          {
+            echo "pkgbase = sway-displays"
+            echo $'\t'"pkgdesc = Display manager for Sway window manager"
+            echo $'\t'"pkgver = ${{ env.VERSION }}"
+            echo $'\t'"pkgrel = 1"
+            echo $'\t'"url = https://github.com/pescheckit/sway-displays"
+            echo $'\t'"arch = any"
+            echo $'\t'"license = MIT"
+            echo $'\t'"depends = bash"
+            echo $'\t'"depends = jq"
+            echo $'\t'"depends = bc"
+            echo $'\t'"depends = sway"
+            echo $'\t'"optdepends = sway-mirror: for display mirroring support"
+            echo $'\t'"source = sway-displays-${{ env.VERSION }}.tar.gz::https://github.com/pescheckit/sway-displays/archive/refs/tags/v${{ env.VERSION }}.tar.gz"
+            echo $'\t'"sha256sums = SKIP"
+            echo ""
+            echo "pkgname = sway-displays"
+          } > .SRCINFO
 
           # Commit and push
           git config user.name "Pescheckit Bot"
