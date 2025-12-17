@@ -1,0 +1,23 @@
+Source: sway-displays
+Section: utils
+Priority: optional
+Maintainer: Bram <bram+sway@pescheck.io>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.6.0
+Homepage: https://github.com/pescheckit/sway-displays
+Vcs-Browser: https://github.com/pescheckit/sway-displays
+Vcs-Git: https://github.com/pescheckit/sway-displays.git
+Rules-Requires-Root: no
+
+Package: sway-displays
+Architecture: all
+Depends: ${misc:Depends}, bash, jq, bc, sway
+Recommends: git
+Suggests: sway-mirror
+Description: Display manager for Sway window manager
+ A command-line tool for managing displays in Sway, including:
+  - Interactive setup wizard for display configuration
+  - Profile saving and loading with hardware detection
+  - Display mirroring support via sway-mirror
+  - Auto-detection of display configurations
+  - Watch mode for automatic profile switching

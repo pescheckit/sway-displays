@@ -1,0 +1,210 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-deb:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y debhelper devscripts
+
+      - name: Update version in script
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          sed -i "s/^VERSION=\".*\"/VERSION=\"$VERSION\"/" sway-displays
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Update debian changelog
+        run: |
+          DATE=$(date -R)
+          cat > debian/changelog << EOF
+          sway-displays (${{ env.VERSION }}-1) unstable; urgency=medium
+
+            * Release ${{ env.VERSION }}
+
+           -- Bram <bram+sway@pescheck.io>  $DATE
+          EOF
+
+      - name: Build .deb package
+        run: dpkg-buildpackage -us -uc -b
+
+      - name: Rename .deb with version
+        run: |
+          mv ../sway-displays_${{ env.VERSION }}-1_all.deb ../sway-displays_${{ env.VERSION }}_all.deb
+
+      - name: Generate checksums
+        run: |
+          sha256sum sway-displays > sway-displays.sha256
+          sha256sum ../sway-displays_${{ env.VERSION }}_all.deb > ../sway-displays_${{ env.VERSION }}_all.deb.sha256
+
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-package
+          path: |
+            ../sway-displays_*.deb
+            ../sway-displays_*.deb.sha256
+
+      - name: Upload script artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: script-package
+          path: |
+            sway-displays
+            sway-displays.sha256
+
+  create-release:
+    needs: build-deb
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get version
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Download .deb artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: deb-package
+          path: ./dist
+
+      - name: Download script artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: script-package
+          path: ./dist
+
+      - name: Create install script artifact
+        run: cp install.sh dist/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: v${{ env.VERSION }}
+          files: |
+            dist/*.deb
+            dist/*.deb.sha256
+            dist/sway-displays
+            dist/sway-displays.sha256
+            dist/install.sh
+          generate_release_notes: true
+          body: |
+            ## Installation
+
+            ### Debian/Ubuntu
+            ```bash
+            wget https://github.com/pescheckit/sway-displays/releases/download/v${{ env.VERSION }}/sway-displays_${{ env.VERSION }}_all.deb
+            wget https://github.com/pescheckit/sway-displays/releases/download/v${{ env.VERSION }}/sway-displays_${{ env.VERSION }}_all.deb.sha256
+            sha256sum -c sway-displays_${{ env.VERSION }}_all.deb.sha256
+            sudo dpkg -i sway-displays_${{ env.VERSION }}_all.deb
+            sudo apt-get install -f  # Install dependencies if needed
+            ```
+
+            ### Arch Linux (AUR)
+            ```bash
+            yay -S sway-displays
+            # or
+            paru -S sway-displays
+            ```
+
+            ### Manual Install (with verification)
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/pescheckit/sway-displays/v${{ env.VERSION }}/install.sh | bash
+            ```
+
+            Or download and verify manually:
+            ```bash
+            wget https://github.com/pescheckit/sway-displays/releases/download/v${{ env.VERSION }}/sway-displays
+            wget https://github.com/pescheckit/sway-displays/releases/download/v${{ env.VERSION }}/sway-displays.sha256
+            sha256sum -c sway-displays.sha256
+            chmod +x sway-displays
+            mv sway-displays ~/.local/bin/
+            ```
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update-aur:
+    needs: create-release
+    runs-on: ubuntu-latest
+    if: ${{ secrets.AUR_SSH_KEY != '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get version
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Install makepkg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pacman-package-manager
+
+      - name: Update AUR package
+        env:
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+        run: |
+          # Setup SSH
+          mkdir -p ~/.ssh
+          echo "$AUR_SSH_KEY" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          cat >> ~/.ssh/config << EOF
+          Host aur.archlinux.org
+            IdentityFile ~/.ssh/aur
+            User aur
+          EOF
+          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
+
+          # Clone AUR repo
+          git clone ssh://aur@aur.archlinux.org/sway-displays.git aur-repo
+          cd aur-repo
+
+          # Update PKGBUILD
+          sed -i "s/^pkgver=.*/pkgver=${{ env.VERSION }}/" PKGBUILD
+          sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+
+          # Update source URL
+          sed -i "s|source=.*|source=(\"sway-displays-${{ env.VERSION }}.tar.gz::https://github.com/pescheckit/sway-displays/archive/refs/tags/v${{ env.VERSION }}.tar.gz\")|" PKGBUILD
+
+          # Generate .SRCINFO (simplified version without makepkg)
+          cat > .SRCINFO << EOF
+          pkgbase = sway-displays
+          	pkgdesc = Display manager for Sway window manager
+          	pkgver = ${{ env.VERSION }}
+          	pkgrel = 1
+          	url = https://github.com/pescheckit/sway-displays
+          	arch = any
+          	license = MIT
+          	depends = bash
+          	depends = jq
+          	depends = bc
+          	depends = sway
+          	optdepends = sway-mirror: for display mirroring support
+          	source = sway-displays-${{ env.VERSION }}.tar.gz::https://github.com/pescheckit/sway-displays/archive/refs/tags/v${{ env.VERSION }}.tar.gz
+          	sha256sums = SKIP
+
+          pkgname = sway-displays
+          EOF
+
+          # Commit and push
+          git config user.name "Pescheckit Bot"
+          git config user.email "bram+sway@pescheck.io"
+          git add PKGBUILD .SRCINFO
+          git commit -m "Update to v${{ env.VERSION }}" || echo "No changes to commit"
+          git push || echo "Push failed - may need to set up AUR package first"
