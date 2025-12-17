@@ -6,6 +6,15 @@
 PROFILE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/displays"
 mkdir -p "$PROFILE_DIR"
 
+# Sanitize profile name (alphanumeric, dash, underscore only)
+sanitize_profile_name() {
+    local name="$1"
+    # Remove any path components and unsafe characters
+    name=$(basename "$name")
+    name="${name//[^a-zA-Z0-9_-]/}"
+    echo "$name"
+}
+
 # Get connected outputs as JSON
 get_outputs() {
     swaymsg -t get_outputs -r
@@ -561,6 +570,13 @@ cmd_save() {
         read -r -p "Profile name: " name
     fi
 
+    # Sanitize profile name to prevent path traversal
+    name=$(sanitize_profile_name "$name")
+    if [ -z "$name" ]; then
+        echo "Invalid profile name"
+        return 1
+    fi
+
     local file="$PROFILE_DIR/$name.json"
 
     # Check if profile already exists
@@ -595,6 +611,13 @@ cmd_load() {
         done
         echo ""
         read -r -p "Profile name: " name
+    fi
+
+    # Sanitize profile name to prevent path traversal
+    name=$(sanitize_profile_name "$name")
+    if [ -z "$name" ]; then
+        echo "Invalid profile name"
+        return 1
     fi
 
     local file="$PROFILE_DIR/$name.json"
@@ -787,9 +810,10 @@ case "${1:-help}" in
     watch-stop)        cmd_watch_stop ;;
     help)              cmd_help ;;
     *)
-        # Try to load as profile name
-        if [ -f "$PROFILE_DIR/$1.json" ]; then
-            cmd_load "$1"
+        # Try to load as profile name (sanitize first)
+        safe_name=$(sanitize_profile_name "$1")
+        if [ -n "$safe_name" ] && [ -f "$PROFILE_DIR/$safe_name.json" ]; then
+            cmd_load "$safe_name"
         else
             echo "Unknown command: $1"
             cmd_help
