@@ -664,14 +664,29 @@ cmd_watch() {
     # Initial auto-apply
     cmd_auto 2>/dev/null
 
-    # Subscribe to sway output events
-    swaymsg -t subscribe '["output"]' | while read -r event; do
-        echo ""
-        echo "Display change detected, waiting for settle..."
-        sleep 1
+    # Keep watching (restart subscription if it exits)
+    while true; do
+        swaymsg -t subscribe '["output"]' | while read -r event; do
+            echo ""
+            echo "Display change detected, waiting for displays to settle..."
 
-        # Re-run auto detection
-        cmd_auto
+            # Wait for displays to stabilize (max 10 seconds, check every second)
+            local prev_sig=""
+            for i in {1..10}; do
+                sleep 1
+                local curr_sig=$(get_current_signature)
+                if [ "$curr_sig" = "$prev_sig" ]; then
+                    echo "Displays stable after ${i}s"
+                    break
+                fi
+                prev_sig=$curr_sig
+            done
+
+            # Auto-apply matching profile
+            cmd_auto
+        done
+        echo "Subscription ended, restarting..."
+        sleep 1
     done
 
     rm -f "$PROFILE_DIR/.watch_pid"
