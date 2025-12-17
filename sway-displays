@@ -6,7 +6,7 @@ set -euo pipefail
 # Usage: displays.sh <command> [args]
 
 # Version
-VERSION="1.0.0"
+VERSION="1.0.1"
 
 # Constants for sleep durations (in seconds)
 DEBOUNCE_INTERVAL=5
