@@ -3,8 +3,8 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
-      - '[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]*'
+      - '[0-9]*.[0-9]*.[0-9]*'
 
 permissions:
   contents: write
@@ -31,13 +31,13 @@ jobs:
       - name: Update debian changelog
         run: |
           DATE=$(date -R)
-          cat > debian/changelog << EOF
-sway-displays (${{ env.VERSION }}-1) unstable; urgency=medium
-
-  * Release ${{ env.VERSION }}
-
- -- Bram <bram+sway@pescheck.io>  $DATE
-EOF
+          printf '%s\n' \
+            "sway-displays (${{ env.VERSION }}-1) unstable; urgency=medium" \
+            "" \
+            "  * Release ${{ env.VERSION }}" \
+            "" \
+            " -- Bram <bram+sway@pescheck.io>  $DATE" \
+            > debian/changelog
 
       - name: Build .deb package
         run: dpkg-buildpackage -us -uc -b
@@ -177,11 +177,11 @@ EOF
           mkdir -p ~/.ssh
           echo "$AUR_SSH_KEY" > ~/.ssh/aur
           chmod 600 ~/.ssh/aur
-          cat >> ~/.ssh/config << EOF
-          Host aur.archlinux.org
-            IdentityFile ~/.ssh/aur
-            User aur
-          EOF
+          cat >> ~/.ssh/config << 'SSHEOF'
+Host aur.archlinux.org
+  IdentityFile ~/.ssh/aur
+  User aur
+SSHEOF
           ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
 
           # Clone AUR repo
@@ -195,25 +195,25 @@ EOF
           # Update source URL
           sed -i "s|source=.*|source=(\"sway-displays-${{ env.VERSION }}.tar.gz::https://github.com/pescheckit/sway-displays/archive/refs/tags/v${{ env.VERSION }}.tar.gz\")|" PKGBUILD
 
-          # Generate .SRCINFO (simplified version without makepkg)
-          cat > .SRCINFO << EOF
-          pkgbase = sway-displays
-          	pkgdesc = Display manager for Sway window manager
-          	pkgver = ${{ env.VERSION }}
-          	pkgrel = 1
-          	url = https://github.com/pescheckit/sway-displays
-          	arch = any
-          	license = MIT
-          	depends = bash
-          	depends = jq
-          	depends = bc
-          	depends = sway
-          	optdepends = sway-mirror: for display mirroring support
-          	source = sway-displays-${{ env.VERSION }}.tar.gz::https://github.com/pescheckit/sway-displays/archive/refs/tags/v${{ env.VERSION }}.tar.gz
-          	sha256sums = SKIP
+          # Generate .SRCINFO
+          cat > .SRCINFO << SRCEOF
+pkgbase = sway-displays
+	pkgdesc = Display manager for Sway window manager
+	pkgver = ${{ env.VERSION }}
+	pkgrel = 1
+	url = https://github.com/pescheckit/sway-displays
+	arch = any
+	license = MIT
+	depends = bash
+	depends = jq
+	depends = bc
+	depends = sway
+	optdepends = sway-mirror: for display mirroring support
+	source = sway-displays-${{ env.VERSION }}.tar.gz::https://github.com/pescheckit/sway-displays/archive/refs/tags/v${{ env.VERSION }}.tar.gz
+	sha256sums = SKIP
 
-          pkgname = sway-displays
-          EOF
+pkgname = sway-displays
+SRCEOF
 
           # Commit and push
           git config user.name "Pescheckit Bot"
