@@ -4,4 +4,4 @@
 	dh $@
 
 override_dh_auto_install:
-	install -D -m 755 sway-displays $(DESTDIR)/usr/bin/sway-displays
+	install -D -m 755 sway-displays debian/sway-displays/usr/bin/sway-displays

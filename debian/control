@@ -2,7 +2,7 @@ Source: sway-displays
 Section: utils
 Priority: optional
 Maintainer: Bram <bram+sway@pescheck.io>
-Build-Depends: debhelper-compat (= 13)
+Build-Depends: debhelper (>= 10)
 Standards-Version: 4.6.0
 Homepage: https://github.com/pescheckit/sway-displays
 Vcs-Browser: https://github.com/pescheckit/sway-displays
