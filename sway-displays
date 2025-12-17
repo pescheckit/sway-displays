@@ -34,8 +34,9 @@ get_outputs() {
 
 # Build profile JSON from current state
 build_profile_json() {
-    local outputs=$(get_outputs)
-    local workspaces=$(swaymsg -t get_workspaces -r)
+    local outputs workspaces
+    outputs=$(get_outputs)
+    workspaces=$(swaymsg -t get_workspaces -r)
 
     echo "$outputs" | jq --argjson ws "$workspaces" '
         [.[] | . as $out | {
@@ -57,10 +58,11 @@ build_profile_json() {
 # Find current output name by hardware ID
 find_output_by_hardware() {
     local make="$1" model="$2" serial="$3"
-    local current_outputs=$(get_outputs)
+    local current_outputs match
+    current_outputs=$(get_outputs)
 
     # Try exact match with serial
-    local match=$(echo "$current_outputs" | jq -r --arg m "$make" --arg mo "$model" --arg s "$serial" \
+    match=$(echo "$current_outputs" | jq -r --arg m "$make" --arg mo "$model" --arg s "$serial" \
         '.[] | select(.make == $m and .model == $mo and .serial == $s) | .name' | head -1)
 
     # Fall back to make+model if serial is Unknown or no match
@@ -78,22 +80,24 @@ apply_profile_from_file() {
     local use_hardware_matching="${2:-true}"
 
     jq -c '.[]' "$file" | while read -r output; do
-        local saved_name=$(echo "$output" | jq -r '.name')
-        local make=$(echo "$output" | jq -r '.make // empty')
-        local model=$(echo "$output" | jq -r '.model // empty')
-        local serial=$(echo "$output" | jq -r '.serial // empty')
-        local x=$(echo "$output" | jq -r '.x')
-        local y=$(echo "$output" | jq -r '.y')
-        local scale=$(echo "$output" | jq -r '.scale')
-        local transform=$(echo "$output" | jq -r '.transform')
-        local enabled=$(echo "$output" | jq -r '.enabled')
-        local workspaces=$(echo "$output" | jq -r '.workspaces // [] | .[]')
-        local focused_ws=$(echo "$output" | jq -r '.focused_workspace // empty')
+        local saved_name make model serial x y scale transform enabled workspaces focused_ws
+        saved_name=$(echo "$output" | jq -r '.name')
+        make=$(echo "$output" | jq -r '.make // empty')
+        model=$(echo "$output" | jq -r '.model // empty')
+        serial=$(echo "$output" | jq -r '.serial // empty')
+        x=$(echo "$output" | jq -r '.x')
+        y=$(echo "$output" | jq -r '.y')
+        scale=$(echo "$output" | jq -r '.scale')
+        transform=$(echo "$output" | jq -r '.transform')
+        enabled=$(echo "$output" | jq -r '.enabled')
+        workspaces=$(echo "$output" | jq -r '.workspaces // [] | .[]')
+        focused_ws=$(echo "$output" | jq -r '.focused_workspace // empty')
 
         # Find current output name
         local current_name="$saved_name"
         if [ "$use_hardware_matching" = "true" ] && [ -n "$make" ] && [ -n "$model" ]; then
-            local matched=$(find_output_by_hardware "$make" "$model" "$serial")
+            local matched
+            matched=$(find_output_by_hardware "$make" "$model" "$serial")
             [ -n "$matched" ] && current_name="$matched"
         fi
 
@@ -123,7 +127,8 @@ apply_profile_from_file() {
 
     # Focus the saved workspace
     if [ -f "$PROFILE_DIR/.focus" ]; then
-        local focus_workspace=$(cat "$PROFILE_DIR/.focus")
+        local focus_workspace
+        focus_workspace=$(cat "$PROFILE_DIR/.focus")
         rm -f "$PROFILE_DIR/.focus"
         if [ -n "$focus_workspace" ]; then
             swaymsg "workspace $focus_workspace" >/dev/null
@@ -143,8 +148,9 @@ get_effective_size() {
     local name="$1" rot="$2" scale="$3"
 
     # Get native resolution
-    local native_w=$(get_outputs | jq -r '.[] | select(.name == "'"$name"'") | .current_mode.width')
-    local native_h=$(get_outputs | jq -r '.[] | select(.name == "'"$name"'") | .current_mode.height')
+    local native_w native_h
+    native_w=$(get_outputs | jq -r '.[] | select(.name == "'"$name"'") | .current_mode.width')
+    native_h=$(get_outputs | jq -r '.[] | select(.name == "'"$name"'") | .current_mode.height')
 
     # Swap dimensions if rotated 90 or 270
     local w=$native_w
@@ -160,8 +166,9 @@ get_effective_size() {
     fi
 
     # Apply scale
-    local eff_w=$(echo "$w / $scale" | bc)
-    local eff_h=$(echo "$h / $scale" | bc)
+    local eff_w eff_h
+    eff_w=$(echo "$w / $scale" | bc)
+    eff_h=$(echo "$h / $scale" | bc)
     echo "$eff_w $eff_h"
 }
 
@@ -181,7 +188,8 @@ cmd_setup() {
     echo "Found $count display(s):"
     for i in "${!outputs[@]}"; do
         local name="${outputs[$i]}"
-        local info=$(get_outputs | jq -r '.[] | select(.name == "'"$name"'") | "\(.make) \(.model) (\(.current_mode.width)x\(.current_mode.height))"')
+        local info
+        info=$(get_outputs | jq -r '.[] | select(.name == "'"$name"'") | "\(.make) \(.model) (\(.current_mode.width)x\(.current_mode.height))"')
         echo "  $((i+1)). $name - $info"
     done
 
@@ -197,7 +205,8 @@ cmd_setup() {
     # Configure each display (enable/disable, rotation, scale)
     for i in "${!outputs[@]}"; do
         local name="${outputs[$i]}"
-        local info=$(get_outputs | jq -r '.[] | select(.name == "'"$name"'") | "\(.make) \(.model) (\(.current_mode.width)x\(.current_mode.height))"')
+        local info
+        info=$(get_outputs | jq -r '.[] | select(.name == "'"$name"'") | "\(.make) \(.model) (\(.current_mode.width)x\(.current_mode.height))"')
         echo "Display $((i+1))/$count: $name ($info)"
 
         read -r -p "  Enable? (y/n/s) [y]: " enable
@@ -258,7 +267,8 @@ cmd_setup() {
         echo "Enabled displays:"
         for i in "${!enabled_displays[@]}"; do
             local name="${enabled_displays[$i]}"
-            local info=$(get_outputs | jq -r '.[] | select(.name == "'"$name"'") | "\(.model)"')
+            local info
+            info=$(get_outputs | jq -r '.[] | select(.name == "'"$name"'") | "\(.model)"')
             read -r w h <<< "$(get_effective_size "$name" "${rotations[$name]}" "${scales[$name]}")"
             echo "  $((i+1)). $name ($info) - ${w}x${h}"
         done
@@ -266,7 +276,8 @@ cmd_setup() {
         echo ""
         echo "Enter the order from LEFT to RIGHT (comma-separated numbers)"
         echo "Example: 2,1,3 means display 2 is leftmost, then 1, then 3"
-        local default_order=$(seq -s, 1 ${#enabled_displays[@]})
+        local default_order
+        default_order=$(seq -s, 1 ${#enabled_displays[@]})
         read -r -p "Order [$default_order]: " order_input
         order_input=${order_input:-$default_order}
 
@@ -289,7 +300,7 @@ cmd_setup() {
         # Calculate positions based on arrangement
         # First display starts at 0,0
         local first_name="${arranged[0]}"
-        read -r first_w first_h <<< "$(get_effective_size "$first_name" "${rotations[$first_name]}" "${scales[$first_name]}")"
+        read -r first_w _ <<< "$(get_effective_size "$first_name" "${rotations[$first_name]}" "${scales[$first_name]}")"
         pos_x[$first_name]=0
         pos_y[$first_name]=0
         local x_pos=$first_w
@@ -298,10 +309,11 @@ cmd_setup() {
         for (( i=1; i<${#arranged[@]}; i++ )); do
             local prev_name="${arranged[$((i-1))]}"
             local curr_name="${arranged[$i]}"
-            local prev_info=$(get_outputs | jq -r '.[] | select(.name == "'"$prev_name"'") | "\(.model)"')
-            local curr_info=$(get_outputs | jq -r '.[] | select(.name == "'"$curr_name"'") | "\(.model)"')
+            local prev_info curr_info
+            prev_info=$(get_outputs | jq -r '.[] | select(.name == "'"$prev_name"'") | "\(.model)"')
+            curr_info=$(get_outputs | jq -r '.[] | select(.name == "'"$curr_name"'") | "\(.model)"')
 
-            read -r prev_w prev_h <<< "$(get_effective_size "$prev_name" "${rotations[$prev_name]}" "${scales[$prev_name]}")"
+            read -r _ prev_h <<< "$(get_effective_size "$prev_name" "${rotations[$prev_name]}" "${scales[$prev_name]}")"
             read -r curr_w curr_h <<< "$(get_effective_size "$curr_name" "${rotations[$curr_name]}" "${scales[$curr_name]}")"
 
             echo ""
@@ -332,7 +344,8 @@ cmd_setup() {
         echo ""
         echo "Arrangement (left to right):"
         for name in "${arranged[@]}"; do
-            local info=$(get_outputs | jq -r '.[] | select(.name == "'"$name"'") | "\(.model)"')
+            local info
+            info=$(get_outputs | jq -r '.[] | select(.name == "'"$name"'") | "\(.model)"')
             echo "  $name ($info) at ${pos_x[$name]},${pos_y[$name]}"
         done
     else
@@ -465,7 +478,8 @@ cmd_mirror() {
     fi
 
     # Find sway-mirror binary
-    local sway_mirror_bin=$(find_sway_mirror)
+    local sway_mirror_bin
+    sway_mirror_bin=$(find_sway_mirror)
     if [ -z "$sway_mirror_bin" ]; then
         echo "sway-mirror not found."
         if ! command -v cargo &>/dev/null; then
@@ -487,10 +501,12 @@ cmd_mirror() {
     # If no source specified, show menu
     if [ -z "$source" ]; then
         echo "Select source display (to mirror FROM):"
-        local all_outputs=$(get_outputs)
+        local all_outputs
+        all_outputs=$(get_outputs)
         for i in "${!outputs[@]}"; do
             local name="${outputs[$i]}"
-            local info=$(echo "$all_outputs" | jq -r '.[] | select(.name == "'"$name"'") | "\(.make) \(.model) (\(.current_mode.width)x\(.current_mode.height))"')
+            local info
+            info=$(echo "$all_outputs" | jq -r '.[] | select(.name == "'"$name"'") | "\(.make) \(.model) (\(.current_mode.width)x\(.current_mode.height))"')
             echo "  $((i+1)). $name - $info"
         done
         read -r -p "Choice [1]: " choice
@@ -560,7 +576,8 @@ cmd_mirror() {
 
 # Stop mirroring
 cmd_unmirror() {
-    local sway_mirror_bin=$(find_sway_mirror)
+    local sway_mirror_bin
+    sway_mirror_bin=$(find_sway_mirror)
 
     if [ -n "$sway_mirror_bin" ]; then
         # Use sway-mirror's built-in stop
@@ -667,16 +684,18 @@ get_profile_signature() {
 
 # Auto-detect and load matching profile
 cmd_auto() {
-    local current_sig=$(get_current_signature)
-    local matched_profile=""
+    local current_sig matched_profile
+    current_sig=$(get_current_signature)
+    matched_profile=""
 
     echo "Current displays: $current_sig"
 
     # Check each profile for a match
     for f in "$PROFILE_DIR"/*.json; do
         [ -f "$f" ] || continue
-        local profile_name=$(basename "$f" .json)
-        local profile_sig=$(get_profile_signature "$f")
+        local profile_name profile_sig
+        profile_name=$(basename "$f" .json)
+        profile_sig=$(get_profile_signature "$f")
 
         if [ "$current_sig" = "$profile_sig" ]; then
             matched_profile="$profile_name"
@@ -700,7 +719,8 @@ cmd_watch() {
 
     # Kill any existing watch process first
     if [ -f "$PROFILE_DIR/.watch_pid" ]; then
-        local old_pid=$(cat "$PROFILE_DIR/.watch_pid")
+        local old_pid
+        old_pid=$(cat "$PROFILE_DIR/.watch_pid")
         if [ "$old_pid" != "$$" ] && kill -0 "$old_pid" 2>/dev/null; then
             kill "$old_pid" 2>/dev/null
             sleep "$UNMIRROR_SETTLE_DELAY"
@@ -723,10 +743,11 @@ cmd_watch() {
 
     # Keep watching (restart subscription if it exits)
     while true; do
-        swaymsg -t subscribe '["output"]' | while read -r event; do
+        swaymsg -t subscribe '["output"]' | while read -r _; do
             # Debounce: ignore events within DEBOUNCE_INTERVAL seconds of last apply
-            local last_apply=$(cat "$last_apply_file" 2>/dev/null || echo 0)
-            local now=$(date +%s)
+            local last_apply now
+            last_apply=$(cat "$last_apply_file" 2>/dev/null || echo 0)
+            now=$(date +%s)
             if [ $((now - last_apply)) -lt "$DEBOUNCE_INTERVAL" ]; then
                 continue
             fi
@@ -740,7 +761,8 @@ cmd_watch() {
             while [ "$i" -lt "$SETTLE_MAX_WAIT" ]; do
                 sleep "$SETTLE_CHECK_INTERVAL"
                 i=$((i + 1))
-                local curr_sig=$(get_current_signature)
+                local curr_sig
+                curr_sig=$(get_current_signature)
                 if [ "$curr_sig" = "$prev_sig" ]; then
                     echo "Displays stable after ${i}s" | tee -a "$log_file"
                     break
@@ -762,7 +784,8 @@ cmd_watch() {
 # Stop watching
 cmd_watch_stop() {
     if [ -f "$PROFILE_DIR/.watch_pid" ]; then
-        local pid=$(cat "$PROFILE_DIR/.watch_pid")
+        local pid
+        pid=$(cat "$PROFILE_DIR/.watch_pid")
         if kill -0 "$pid" 2>/dev/null; then
             kill "$pid"
             rm -f "$PROFILE_DIR/.watch_pid"
