@@ -11,6 +11,105 @@ get_outputs() {
     swaymsg -t get_outputs -r
 }
 
+# Build profile JSON from current state
+build_profile_json() {
+    local outputs=$(get_outputs)
+    local workspaces=$(swaymsg -t get_workspaces -r)
+
+    echo "$outputs" | jq --argjson ws "$workspaces" '
+        [.[] | . as $out | {
+            name: .name,
+            make: .make,
+            model: .model,
+            serial: .serial,
+            x: .rect.x,
+            y: .rect.y,
+            scale: .scale,
+            transform: .transform,
+            enabled: .dpms,
+            workspaces: [$ws[] | select(.output == $out.name) | .name],
+            focused_workspace: ([$ws[] | select(.output == $out.name and .focused == true) | .name] | first)
+        }]
+    '
+}
+
+# Find current output name by hardware ID
+find_output_by_hardware() {
+    local make="$1" model="$2" serial="$3"
+    local current_outputs=$(get_outputs)
+
+    # Try exact match with serial
+    local match=$(echo "$current_outputs" | jq -r --arg m "$make" --arg mo "$model" --arg s "$serial" \
+        '.[] | select(.make == $m and .model == $mo and .serial == $s) | .name' | head -1)
+
+    # Fall back to make+model if serial is Unknown or no match
+    if [ -z "$match" ] || [ "$serial" = "Unknown" ]; then
+        match=$(echo "$current_outputs" | jq -r --arg m "$make" --arg mo "$model" \
+            '.[] | select(.make == $m and .model == $mo) | .name' | head -1)
+    fi
+
+    echo "$match"
+}
+
+# Apply profile from a JSON file (used by load and unmirror)
+apply_profile_from_file() {
+    local file="$1"
+    local use_hardware_matching="${2:-true}"
+
+    jq -c '.[]' "$file" | while read -r output; do
+        local saved_name=$(echo "$output" | jq -r '.name')
+        local make=$(echo "$output" | jq -r '.make // empty')
+        local model=$(echo "$output" | jq -r '.model // empty')
+        local serial=$(echo "$output" | jq -r '.serial // empty')
+        local x=$(echo "$output" | jq -r '.x')
+        local y=$(echo "$output" | jq -r '.y')
+        local scale=$(echo "$output" | jq -r '.scale')
+        local transform=$(echo "$output" | jq -r '.transform')
+        local enabled=$(echo "$output" | jq -r '.enabled')
+        local workspaces=$(echo "$output" | jq -r '.workspaces // [] | .[]')
+        local focused_ws=$(echo "$output" | jq -r '.focused_workspace // empty')
+
+        # Find current output name
+        local current_name="$saved_name"
+        if [ "$use_hardware_matching" = "true" ] && [ -n "$make" ] && [ -n "$model" ]; then
+            local matched=$(find_output_by_hardware "$make" "$model" "$serial")
+            [ -n "$matched" ] && current_name="$matched"
+        fi
+
+        if [ "$enabled" = "true" ]; then
+            if [ "$current_name" != "$saved_name" ]; then
+                echo "  $saved_name -> $current_name: pos $x,$y scale $scale transform $transform"
+            else
+                echo "  $current_name: pos $x,$y scale $scale transform $transform"
+            fi
+            swaymsg output "$current_name" enable pos "$x" "$y" scale "$scale" transform "$transform" >/dev/null
+
+            # Update sway's workspace-output bindings and move workspaces
+            for ws in $workspaces; do
+                swaymsg "workspace $ws output $current_name" >/dev/null 2>&1
+                swaymsg "workspace $ws; move workspace to output $current_name" >/dev/null 2>&1
+            done
+
+            # Track focused workspace
+            if [ -n "$focused_ws" ]; then
+                echo "$focused_ws" > "$PROFILE_DIR/.focus"
+            fi
+        else
+            echo "  $current_name: disabled"
+            swaymsg output "$current_name" disable >/dev/null
+        fi
+    done
+
+    # Focus the saved workspace
+    if [ -f "$PROFILE_DIR/.focus" ]; then
+        local focus_workspace=$(cat "$PROFILE_DIR/.focus")
+        rm -f "$PROFILE_DIR/.focus"
+        if [ -n "$focus_workspace" ]; then
+            swaymsg "workspace $focus_workspace" >/dev/null
+        fi
+    fi
+}
+
 # List connected displays
 cmd_list() {
     echo "Connected displays:"
@@ -345,8 +444,8 @@ cmd_mirror() {
         source="${outputs[$((choice-1))]}"
     fi
 
-    # Save current positions before mirroring (for unmirror to restore)
-    get_outputs | jq '[.[] | {name: .name, x: .rect.x, y: .rect.y, scale: .scale, transform: .transform}]' > "$PROFILE_DIR/.pre_mirror.json"
+    # Save current state before mirroring (for unmirror to restore)
+    build_profile_json > "$PROFILE_DIR/.pre_mirror.json"
 
     # Clear any existing pids file
     rm -f "$PROFILE_DIR/.mirror_pids"
@@ -375,7 +474,7 @@ cmd_unmirror() {
     local sway_mirror_bin=$(find_sway_mirror)
 
     if [ -n "$sway_mirror_bin" ]; then
-        # Use sway-mirror's built-in stop (handles workspace restoration)
+        # Use sway-mirror's built-in stop
         "$sway_mirror_bin" --stop
     else
         # Fallback: kill any sway-mirror processes
@@ -383,7 +482,13 @@ cmd_unmirror() {
         pkill -f "sway-mirror" 2>/dev/null && echo "Stopped." || echo "No sway-mirror process found."
     fi
 
-    # Clean up our tracking files
+    # Restore pre-mirror state if saved
+    if [ -f "$PROFILE_DIR/.pre_mirror.json" ]; then
+        echo "Restoring previous display configuration..."
+        apply_profile_from_file "$PROFILE_DIR/.pre_mirror.json" "false"
+    fi
+
+    # Clean up tracking files
     rm -f "$PROFILE_DIR/.mirror_pids" "$PROFILE_DIR/.pre_mirror.json"
 }
 
@@ -406,8 +511,7 @@ cmd_save() {
         fi
     fi
 
-    get_outputs | jq '[.[] | {name: .name, x: .rect.x, y: .rect.y, scale: .scale, transform: .transform, enabled: .dpms, make: .make, model: .model}]' > "$file"
-
+    build_profile_json > "$file"
     echo "Saved to $file"
 }
 
@@ -427,26 +531,91 @@ cmd_load() {
     local file="$PROFILE_DIR/$name.json"
     if [ -f "$file" ]; then
         echo "Loading profile: $name"
-        # Read JSON and apply each output config
-        jq -c '.[]' "$file" | while read -r output; do
-            local oname=$(echo "$output" | jq -r '.name')
-            local x=$(echo "$output" | jq -r '.x')
-            local y=$(echo "$output" | jq -r '.y')
-            local scale=$(echo "$output" | jq -r '.scale')
-            local transform=$(echo "$output" | jq -r '.transform')
-            local enabled=$(echo "$output" | jq -r '.enabled')
-
-            if [ "$enabled" = "true" ]; then
-                echo "  $oname: pos $x,$y scale $scale transform $transform"
-                swaymsg output "$oname" enable pos "$x" "$y" scale "$scale" transform "$transform"
-            else
-                echo "  $oname: disabled"
-                swaymsg output "$oname" disable
-            fi
-        done
+        apply_profile_from_file "$file" "true"
     else
         echo "Profile not found: $name"
         exit 1
+    fi
+}
+
+# Get hardware signature of current displays (sorted make:model:serial)
+get_current_signature() {
+    get_outputs | jq -r '[.[] | "\(.make):\(.model):\(.serial)"] | sort | join("|")'
+}
+
+# Get hardware signature from a profile file
+get_profile_signature() {
+    local file="$1"
+    jq -r '[.[] | select(.enabled == true) | "\(.make):\(.model):\(.serial)"] | sort | join("|")' "$file"
+}
+
+# Auto-detect and load matching profile
+cmd_auto() {
+    local current_sig=$(get_current_signature)
+    local matched_profile=""
+
+    echo "Current displays: $current_sig"
+
+    # Check each profile for a match
+    for f in "$PROFILE_DIR"/*.json; do
+        [ -f "$f" ] || continue
+        local profile_name=$(basename "$f" .json)
+        local profile_sig=$(get_profile_signature "$f")
+
+        if [ "$current_sig" = "$profile_sig" ]; then
+            matched_profile="$profile_name"
+            break
+        fi
+    done
+
+    if [ -n "$matched_profile" ]; then
+        echo "Matched profile: $matched_profile"
+        cmd_load "$matched_profile"
+    else
+        echo "No matching profile found for current displays"
+        echo "Save one with: sway-displays save <name>"
+        return 1
+    fi
+}
+
+# Watch for display changes and auto-apply profiles
+cmd_watch() {
+    echo "Watching for display changes... (Ctrl+C to stop)"
+    echo "PID: $$"
+
+    # Save PID for stopping later
+    echo $$ > "$PROFILE_DIR/.watch_pid"
+
+    # Initial auto-apply
+    cmd_auto 2>/dev/null
+
+    # Subscribe to sway output events
+    swaymsg -t subscribe '["output"]' | while read -r event; do
+        echo ""
+        echo "Display change detected, waiting for settle..."
+        sleep 1
+
+        # Re-run auto detection
+        cmd_auto
+    done
+
+    rm -f "$PROFILE_DIR/.watch_pid"
+}
+
+# Stop watching
+cmd_watch_stop() {
+    if [ -f "$PROFILE_DIR/.watch_pid" ]; then
+        local pid=$(cat "$PROFILE_DIR/.watch_pid")
+        if kill -0 "$pid" 2>/dev/null; then
+            kill "$pid"
+            rm -f "$PROFILE_DIR/.watch_pid"
+            echo "Stopped watch (PID $pid)"
+        else
+            rm -f "$PROFILE_DIR/.watch_pid"
+            echo "Watch was not running"
+        fi
+    else
+        echo "Watch is not running"
     fi
 }
 
@@ -464,6 +633,9 @@ cmd_help() {
     echo "  save [name]           Save current config as profile"
     echo "  load [name]           Load a saved profile"
     echo "  profiles              List saved profiles"
+    echo "  auto                  Auto-detect and load matching profile"
+    echo "  watch                 Watch for display changes (daemon)"
+    echo "  watch-stop            Stop the watch daemon"
     echo "  help                  Show this help"
     echo ""
     echo "Profiles are saved in: $PROFILE_DIR"
@@ -486,6 +658,9 @@ case "${1:-help}" in
     save)              cmd_save "$2" ;;
     load)              cmd_load "$2" ;;
     profiles)          cmd_profiles ;;
+    auto)              cmd_auto ;;
+    watch)             cmd_watch ;;
+    watch-stop)        cmd_watch_stop ;;
     help)              cmd_help ;;
     *)
         # Try to load as profile name
