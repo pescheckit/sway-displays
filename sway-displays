@@ -141,7 +141,8 @@ get_effective_size() {
 
 # Interactive setup wizard
 cmd_setup() {
-    local outputs=($(get_outputs | jq -r '.[].name'))
+    local outputs
+    mapfile -t outputs < <(get_outputs | jq -r '.[].name')
     local count=${#outputs[@]}
 
     if [ "$count" -eq 0 ]; then
@@ -232,7 +233,7 @@ cmd_setup() {
         for i in "${!enabled_displays[@]}"; do
             local name="${enabled_displays[$i]}"
             local info=$(get_outputs | jq -r '.[] | select(.name == "'"$name"'") | "\(.model)"')
-            read w h <<< $(get_effective_size "$name" "${rotations[$name]}" "${scales[$name]}")
+            read -r w h <<< "$(get_effective_size "$name" "${rotations[$name]}" "${scales[$name]}")"
             echo "  $((i+1)). $name ($info) - ${w}x${h}"
         done
 
@@ -262,7 +263,7 @@ cmd_setup() {
         # Calculate positions based on arrangement
         # First display starts at 0,0
         local first_name="${arranged[0]}"
-        read first_w first_h <<< $(get_effective_size "$first_name" "${rotations[$first_name]}" "${scales[$first_name]}")
+        read -r first_w first_h <<< "$(get_effective_size "$first_name" "${rotations[$first_name]}" "${scales[$first_name]}")"
         pos_x[$first_name]=0
         pos_y[$first_name]=0
         local x_pos=$first_w
@@ -274,8 +275,8 @@ cmd_setup() {
             local prev_info=$(get_outputs | jq -r '.[] | select(.name == "'"$prev_name"'") | "\(.model)"')
             local curr_info=$(get_outputs | jq -r '.[] | select(.name == "'"$curr_name"'") | "\(.model)"')
 
-            read prev_w prev_h <<< $(get_effective_size "$prev_name" "${rotations[$prev_name]}" "${scales[$prev_name]}")
-            read curr_w curr_h <<< $(get_effective_size "$curr_name" "${rotations[$curr_name]}" "${scales[$curr_name]}")
+            read -r prev_w prev_h <<< "$(get_effective_size "$prev_name" "${rotations[$prev_name]}" "${scales[$prev_name]}")"
+            read -r curr_w curr_h <<< "$(get_effective_size "$curr_name" "${rotations[$curr_name]}" "${scales[$curr_name]}")"
 
             echo ""
             echo "How is $curr_name ($curr_info) aligned with $prev_name ($prev_info)?"
@@ -399,8 +400,37 @@ install_sway_mirror() {
 
 # Mirror displays using sway-mirror
 cmd_mirror() {
-    local source="$1"
-    local outputs=($(get_outputs | jq -r '.[].name'))
+    local source=""
+    local scale_mode="fit"
+    local cursor="true"
+    local workspaces="true"
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -s|--scale)
+                scale_mode="$2"
+                shift 2
+                ;;
+            --cursor)
+                cursor="$2"
+                shift 2
+                ;;
+            -w|--workspaces)
+                workspaces="$2"
+                shift 2
+                ;;
+            *)
+                if [ -z "$source" ]; then
+                    source="$1"
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    local outputs
+    mapfile -t outputs < <(get_outputs | jq -r '.[].name')
     local count=${#outputs[@]}
 
     if [ "$count" -lt 2 ]; then
@@ -431,9 +461,10 @@ cmd_mirror() {
     # If no source specified, show menu
     if [ -z "$source" ]; then
         echo "Select source display (to mirror FROM):"
+        local all_outputs=$(get_outputs)
         for i in "${!outputs[@]}"; do
             local name="${outputs[$i]}"
-            local info=$(get_outputs | jq -r '.[] | select(.name == "'"$name"'") | "\(.make) \(.model) (\(.current_mode.width)x\(.current_mode.height))"')
+            local info=$(echo "$all_outputs" | jq -r '.[] | select(.name == "'"$name"'") | "\(.make) \(.model) (\(.current_mode.width)x\(.current_mode.height))"')
             echo "  $((i+1)). $name - $info"
         done
         read -r -p "Choice [1]: " choice
@@ -442,6 +473,31 @@ cmd_mirror() {
             choice=1
         fi
         source="${outputs[$((choice-1))]}"
+
+        # Ask for scale mode
+        echo ""
+        echo "Scale mode:"
+        echo "  1. fit     - Preserve aspect ratio, letterbox if needed (default)"
+        echo "  2. fill    - Preserve aspect ratio, crop to fill"
+        echo "  3. stretch - Stretch to fill, ignore aspect ratio"
+        echo "  4. center  - 1:1 pixel ratio, centered"
+        read -r -p "Choice [1]: " scale_choice
+        case "$scale_choice" in
+            2) scale_mode="fill" ;;
+            3) scale_mode="stretch" ;;
+            4) scale_mode="center" ;;
+            *) scale_mode="fit" ;;
+        esac
+
+        # Ask about cursor
+        read -r -p "Include cursor in mirror? (y/n) [y]: " cursor_choice
+        cursor_choice=${cursor_choice:-y}
+        [[ "$cursor_choice" == "n" || "$cursor_choice" == "N" ]] && cursor="false"
+
+        # Ask about workspaces
+        read -r -p "Move workspaces to source? (y/n) [y]: " ws_choice
+        ws_choice=${ws_choice:-y}
+        [[ "$ws_choice" == "n" || "$ws_choice" == "N" ]] && workspaces="false"
     fi
 
     # Save current state before mirroring (for unmirror to restore)
@@ -450,10 +506,11 @@ cmd_mirror() {
     # Clear any existing pids file
     rm -f "$PROFILE_DIR/.mirror_pids"
 
-    echo "Mirroring $source to all other displays..."
+    echo "Mirroring $source to all other displays (scale: $scale_mode, cursor: $cursor, workspaces: $workspaces)..."
 
-    # Build target list
+    # Build target list and mirror args
     local targets=()
+    local mirror_args=()
     for name in "${outputs[@]}"; do
         if [ "$name" != "$source" ]; then
             echo "  $name <- mirroring $source"
@@ -461,8 +518,13 @@ cmd_mirror() {
         fi
     done
 
+    # Add options
+    mirror_args+=("-s" "$scale_mode")
+    mirror_args+=("-w" "$workspaces")
+    [[ "$cursor" == "false" ]] && mirror_args+=("--cursor" "false")
+
     # Run sway-mirror (mirrors to all targets in one process)
-    "$sway_mirror_bin" "$source" "${targets[@]}" &
+    "$sway_mirror_bin" "$source" "${targets[@]}" "${mirror_args[@]}" &
     echo $! > "$PROFILE_DIR/.mirror_pids"
 
     echo ""
@@ -515,6 +577,13 @@ cmd_save() {
     echo "Saved to $file"
 }
 
+# Check if mirroring is active
+is_mirroring() {
+    [ -f "$PROFILE_DIR/.mirror_pids" ] && return 0
+    pgrep -f "sway-mirror" >/dev/null 2>&1 && return 0
+    return 1
+}
+
 # Load a profile
 cmd_load() {
     local name="$1"
@@ -530,6 +599,12 @@ cmd_load() {
 
     local file="$PROFILE_DIR/$name.json"
     if [ -f "$file" ]; then
+        # Stop mirroring if active before loading profile
+        if is_mirroring; then
+            echo "Stopping active mirror session..."
+            cmd_unmirror
+            sleep 0.5
+        fi
         echo "Loading profile: $name"
         apply_profile_from_file "$file" "true"
     else
@@ -628,15 +703,25 @@ cmd_help() {
     echo "Commands:"
     echo "  list                  Show connected displays"
     echo "  setup                 Interactive setup wizard"
-    echo "  mirror [output]       Mirror source display to all others"
+    echo "  mirror [output] [opts] Mirror source display to all others"
     echo "  unmirror              Stop mirroring"
     echo "  save [name]           Save current config as profile"
-    echo "  load [name]           Load a saved profile"
+    echo "  load [name]           Load a saved profile (auto-stops mirror)"
     echo "  profiles              List saved profiles"
     echo "  auto                  Auto-detect and load matching profile"
     echo "  watch                 Watch for display changes (daemon)"
     echo "  watch-stop            Stop the watch daemon"
     echo "  help                  Show this help"
+    echo ""
+    echo "Mirror options:"
+    echo "  -s, --scale <mode>    fit (default), fill, stretch, center"
+    echo "  --cursor <bool>       Include cursor (default: true)"
+    echo "  -w, --workspaces <bool> Move workspaces to source (default: true)"
+    echo ""
+    echo "Examples:"
+    echo "  sway-displays mirror              # Interactive mode"
+    echo "  sway-displays mirror eDP-1        # Mirror eDP-1 to all others"
+    echo "  sway-displays mirror eDP-1 -s fill # Use fill scaling"
     echo ""
     echo "Profiles are saved in: $PROFILE_DIR"
 }
@@ -653,7 +738,7 @@ cmd_profiles() {
 case "${1:-help}" in
     list)              cmd_list ;;
     setup)             cmd_setup ;;
-    mirror)            cmd_mirror "$2" ;;
+    mirror)            shift; cmd_mirror "$@" ;;
     unmirror)          cmd_unmirror ;;
     save)              cmd_save "$2" ;;
     load)              cmd_load "$2" ;;
