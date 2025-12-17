@@ -1,0 +1,9 @@
+sway-displays (1.0.0-1) unstable; urgency=medium
+
+  * Initial release
+  * Display setup wizard
+  * Profile save/load with hardware matching
+  * Display mirroring support
+  * Auto-detection and watch mode
+
+ -- Bram <bram+sway@pescheck.io>  Tue, 17 Dec 2024 12:00:00 +0000
