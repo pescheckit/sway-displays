@@ -42,30 +42,20 @@ jobs:
       - name: Build .deb package
         run: dpkg-buildpackage -us -uc -b
 
-      - name: Rename .deb with version
+      - name: Prepare artifacts
         run: |
-          mv ../sway-displays_${{ env.VERSION }}-1_all.deb ../sway-displays_${{ env.VERSION }}_all.deb
-
-      - name: Generate checksums
-        run: |
+          mkdir -p dist
+          mv ../sway-displays_${{ env.VERSION }}-1_all.deb dist/sway-displays_${{ env.VERSION }}_all.deb
+          cp sway-displays dist/
+          cd dist
           sha256sum sway-displays > sway-displays.sha256
-          sha256sum ../sway-displays_${{ env.VERSION }}_all.deb > ../sway-displays_${{ env.VERSION }}_all.deb.sha256
+          sha256sum sway-displays_${{ env.VERSION }}_all.deb > sway-displays_${{ env.VERSION }}_all.deb.sha256
 
-      - name: Upload .deb artifact
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: deb-package
-          path: |
-            ../sway-displays_*.deb
-            ../sway-displays_*.deb.sha256
-
-      - name: Upload script artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: script-package
-          path: |
-            sway-displays
-            sway-displays.sha256
+          name: release-artifacts
+          path: dist/
 
   create-release:
     needs: build-deb
@@ -80,19 +70,13 @@ jobs:
           VERSION="${VERSION#v}"  # Remove v prefix if present
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
-      - name: Download .deb artifact
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          name: deb-package
+          name: release-artifacts
           path: ./dist
 
-      - name: Download script artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: script-package
-          path: ./dist
-
-      - name: Create install script artifact
+      - name: Add install script
         run: cp install.sh dist/
 
       - name: Create Release
