@@ -141,22 +141,31 @@ jobs:
   update-aur:
     needs: create-release
     runs-on: ubuntu-latest
-    if: ${{ secrets.AUR_SSH_KEY != '' }}
     steps:
+      - name: Check if AUR secret exists
+        id: check-secret
+        env:
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+        run: |
+          if [ -n "$AUR_SSH_KEY" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "AUR_SSH_KEY not set, skipping AUR update"
+          fi
+
       - name: Checkout
+        if: steps.check-secret.outputs.exists == 'true'
         uses: actions/checkout@v4
 
       - name: Get version
+        if: steps.check-secret.outputs.exists == 'true'
         run: |
           VERSION="${GITHUB_REF#refs/tags/v}"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
-      - name: Install makepkg
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pacman-package-manager
-
       - name: Update AUR package
+        if: steps.check-secret.outputs.exists == 'true'
         env:
           AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
         run: |
