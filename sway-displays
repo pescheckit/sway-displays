@@ -1,7 +1,19 @@
 #!/bin/bash
 
+set -euo pipefail
+
 # Generic display manager for Sway
 # Usage: displays.sh <command> [args]
+
+# Version
+VERSION="1.0.0"
+
+# Constants for sleep durations (in seconds)
+DEBOUNCE_INTERVAL=5
+SETTLE_CHECK_INTERVAL=1
+SETTLE_MAX_WAIT=10
+SUBSCRIPTION_RESTART_DELAY=2
+UNMIRROR_SETTLE_DELAY=0.5
 
 PROFILE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/displays"
 mkdir -p "$PROFILE_DIR"
@@ -142,6 +154,11 @@ get_effective_size() {
         h=$native_w
     fi
 
+    # Validate scale (default to 1 if empty or zero)
+    if [ -z "$scale" ] || [ "$scale" = "0" ]; then
+        scale=1
+    fi
+
     # Apply scale
     local eff_w=$(echo "$w / $scale" | bc)
     local eff_h=$(echo "$h / $scale" | bc)
@@ -257,7 +274,7 @@ cmd_setup() {
         IFS=',' read -ra order_nums <<< "$order_input"
         local arranged=()
         for num in "${order_nums[@]}"; do
-            num=$(echo "$num" | tr -d ' ')  # trim spaces
+            num="${num// /}"  # trim spaces
             if [[ "$num" =~ ^[0-9]+$ ]] && [ "$num" -ge 1 ] && [ "$num" -le ${#enabled_displays[@]} ]; then
                 arranged+=("${enabled_displays[$((num-1))]}")
             fi
@@ -478,7 +495,8 @@ cmd_mirror() {
         done
         read -r -p "Choice [1]: " choice
         choice=${choice:-1}
-        if ! [[ "$choice" =~ ^[0-9]+$ ]]; then
+        if ! [[ "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt "${#outputs[@]}" ]; then
+            echo "Invalid choice, using 1"
             choice=1
         fi
         source="${outputs[$((choice-1))]}"
@@ -626,7 +644,7 @@ cmd_load() {
         if is_mirroring; then
             echo "Stopping active mirror session..."
             cmd_unmirror
-            sleep 0.5
+            sleep "$UNMIRROR_SETTLE_DELAY"
         fi
         echo "Loading profile: $name"
         apply_profile_from_file "$file" "true"
@@ -685,7 +703,7 @@ cmd_watch() {
         local old_pid=$(cat "$PROFILE_DIR/.watch_pid")
         if [ "$old_pid" != "$$" ] && kill -0 "$old_pid" 2>/dev/null; then
             kill "$old_pid" 2>/dev/null
-            sleep 0.5
+            sleep "$UNMIRROR_SETTLE_DELAY"
         fi
     fi
 
@@ -706,20 +724,22 @@ cmd_watch() {
     # Keep watching (restart subscription if it exits)
     while true; do
         swaymsg -t subscribe '["output"]' | while read -r event; do
-            # Debounce: ignore events within 5 seconds of last apply
+            # Debounce: ignore events within DEBOUNCE_INTERVAL seconds of last apply
             local last_apply=$(cat "$last_apply_file" 2>/dev/null || echo 0)
             local now=$(date +%s)
-            if [ $((now - last_apply)) -lt 5 ]; then
+            if [ $((now - last_apply)) -lt "$DEBOUNCE_INTERVAL" ]; then
                 continue
             fi
 
             echo "" | tee -a "$log_file"
             echo "Display change detected at $(date), waiting for displays to settle..." | tee -a "$log_file"
 
-            # Wait for displays to stabilize (max 10 seconds, check every second)
+            # Wait for displays to stabilize (max SETTLE_MAX_WAIT seconds)
             local prev_sig=""
-            for i in {1..10}; do
-                sleep 1
+            local i=0
+            while [ "$i" -lt "$SETTLE_MAX_WAIT" ]; do
+                sleep "$SETTLE_CHECK_INTERVAL"
+                i=$((i + 1))
                 local curr_sig=$(get_current_signature)
                 if [ "$curr_sig" = "$prev_sig" ]; then
                     echo "Displays stable after ${i}s" | tee -a "$log_file"
@@ -733,7 +753,7 @@ cmd_watch() {
             date +%s > "$last_apply_file"
         done
         echo "Subscription ended, restarting..." | tee -a "$log_file"
-        sleep 2
+        sleep "$SUBSCRIPTION_RESTART_DELAY"
     done
 
     rm -f "$PROFILE_DIR/.watch_pid"
@@ -798,6 +818,7 @@ cmd_profiles() {
 
 # Main
 case "${1:-help}" in
+    -v|--version)      echo "sway-displays $VERSION" ;;
     list)              cmd_list ;;
     setup)             cmd_setup ;;
     mirror)            shift; cmd_mirror "$@" ;;

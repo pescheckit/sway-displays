@@ -1,0 +1,34 @@
+name: Update Version on Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  update-version:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Update version in script
+        run: |
+          VERSION="${{ github.event.release.tag_name }}"
+          # Remove 'v' prefix if present
+          VERSION="${VERSION#v}"
+          # Update VERSION in the script
+          sed -i "s/^VERSION=\".*\"/VERSION=\"$VERSION\"/" sway-displays
+          echo "Updated version to $VERSION"
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add sway-displays
+          git diff --staged --quiet || git commit -m "chore: bump version to ${{ github.event.release.tag_name }}"
+          git push

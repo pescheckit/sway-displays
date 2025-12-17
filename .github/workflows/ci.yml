@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os:
+          - ubuntu-latest
+          - ubuntu-22.04
+        container:
+          - null  # Use runner directly for ubuntu-*
+        include:
+          - os: ubuntu-latest
+            container: debian:bookworm
+            name: Debian Bookworm
+          - os: ubuntu-latest
+            container: debian:bullseye
+            name: Debian Bullseye
+          - os: ubuntu-latest
+            container: archlinux:latest
+            name: Arch Linux
+          - os: ubuntu-latest
+            container: fedora:latest
+            name: Fedora
+
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
+    name: ${{ matrix.name || matrix.os }}
+
+    steps:
+      - name: Install dependencies (Debian/Ubuntu)
+        if: matrix.container == 'debian:bookworm' || matrix.container == 'debian:bullseye'
+        run: |
+          apt-get update
+          apt-get install -y bash jq bc git
+
+      - name: Install dependencies (Arch)
+        if: matrix.container == 'archlinux:latest'
+        run: |
+          pacman -Sy --noconfirm bash jq bc git
+
+      - name: Install dependencies (Fedora)
+        if: matrix.container == 'fedora:latest'
+        run: |
+          dnf install -y bash jq bc git
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify bash version
+        run: bash --version
+
+      - name: Check script syntax
+        run: bash -n sway-displays
+
+      - name: Test version flag
+        run: |
+          ./sway-displays --version
+          ./sway-displays -v
+
+      - name: Test help command
+        run: ./sway-displays help
+
+      - name: Run shellcheck
+        if: matrix.os == 'ubuntu-latest' && matrix.container == null
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          shellcheck sway-displays || true  # Don't fail on warnings
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: Run shellcheck
+        run: shellcheck -S warning sway-displays
