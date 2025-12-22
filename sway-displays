@@ -563,8 +563,8 @@ cmd_mirror() {
 
     # Add options
     mirror_args+=("-s" "$scale_mode")
-    mirror_args+=("-w" "$workspaces")
-    [[ "$cursor" == "false" ]] && mirror_args+=("--cursor" "false")
+    [[ "$workspaces" == "true" ]] && mirror_args+=("-w")
+    [[ "$cursor" == "true" ]] && mirror_args+=("--cursor")
 
     # Run sway-mirror (mirrors to all targets in one process)
     "$sway_mirror_bin" "$source" "${targets[@]}" "${mirror_args[@]}" &
