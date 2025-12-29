@@ -1,20 +1,21 @@
 #!/bin/bash
 
-set -euo pipefail
+set -uo pipefail
+# Note: removed -e to prevent script exit on swaymsg failures during display transitions
 
 # Generic display manager for Sway
 # Usage: displays.sh <command> [args]
 
 # Version
-VERSION="1.0.2"
+VERSION="1.0.4"  # Fix race conditions with flock and proper cleanup
 
 # Constants for sleep durations (in seconds)
-DEBOUNCE_INTERVAL=5
-SETTLE_CHECK_INTERVAL=1
+DEBOUNCE_INTERVAL=3
+SETTLE_CHECK_INTERVAL=0.3
 SETTLE_MAX_WAIT=10
-SUBSCRIPTION_RESTART_DELAY=2
-UNMIRROR_SETTLE_DELAY=0.5
-OUTPUT_APPLY_DELAY=0.3  # Delay between output reconfigurations to prevent compositor crashes
+SUBSCRIPTION_RESTART_DELAY=1
+UNMIRROR_SETTLE_DELAY=0.3
+OUTPUT_APPLY_DELAY=0.2
 
 PROFILE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/displays"
 mkdir -p "$PROFILE_DIR"
@@ -31,6 +32,18 @@ sanitize_profile_name() {
 # Get connected outputs as JSON
 get_outputs() {
     swaymsg -t get_outputs -r
+}
+
+# Check if all active outputs have valid modes (ready for configuration)
+outputs_ready() {
+    local result
+    result=$(swaymsg -t get_outputs -r 2>/dev/null | jq '
+        [.[] | select(.active == true)] |
+        if length == 0 then false
+        else all(.[]; .current_mode.width != null and .current_mode.width > 0)
+        end
+    ' 2>/dev/null) || return 1
+    [ "$result" = "true" ]
 }
 
 # Build profile JSON from current state
@@ -108,13 +121,13 @@ apply_profile_from_file() {
             else
                 echo "  $current_name: pos $x,$y scale $scale transform $transform"
             fi
-            swaymsg output "$current_name" enable pos "$x" "$y" scale "$scale" transform "$transform" >/dev/null
-            sleep "$OUTPUT_APPLY_DELAY"  # Allow compositor to stabilize
+            swaymsg output "$current_name" enable pos "$x" "$y" scale "$scale" transform "$transform" >/dev/null 2>&1 || true
+            sleep "$OUTPUT_APPLY_DELAY"
 
             # Update sway's workspace-output bindings and move workspaces
             for ws in $workspaces; do
-                swaymsg "workspace $ws output $current_name" >/dev/null 2>&1
-                swaymsg "workspace $ws; move workspace to output $current_name" >/dev/null 2>&1
+                swaymsg "workspace $ws output $current_name" >/dev/null 2>&1 || true
+                swaymsg "workspace $ws; move workspace to output $current_name" >/dev/null 2>&1 || true
             done
 
             # Track focused workspace
@@ -123,7 +136,7 @@ apply_profile_from_file() {
             fi
         else
             echo "  $current_name: disabled"
-            swaymsg output "$current_name" disable >/dev/null
+            swaymsg output "$current_name" disable >/dev/null 2>&1 || true
             sleep "$OUTPUT_APPLY_DELAY"  # Allow compositor to stabilize
         fi
     done
@@ -134,7 +147,7 @@ apply_profile_from_file() {
         focus_workspace=$(cat "$PROFILE_DIR/.focus")
         rm -f "$PROFILE_DIR/.focus"
         if [ -n "$focus_workspace" ]; then
-            swaymsg "workspace $focus_workspace" >/dev/null
+            swaymsg "workspace $focus_workspace" >/dev/null 2>&1 || true
         fi
     fi
 }
@@ -722,14 +735,27 @@ cmd_auto() {
 # Watch for display changes and auto-apply profiles
 cmd_watch() {
     local log_file="$PROFILE_DIR/watch.log"
+    local lock_file="$PROFILE_DIR/.watch_lock"
 
-    # Kill any existing watch process first
+    # Use a lock file to prevent multiple instances
+    exec 200>"$lock_file"
+    if ! flock -n 200; then
+        echo "Another watch instance is already running (lock held)"
+        exit 0
+    fi
+
+    # Kill any existing watch process first (belt and suspenders with lock)
     if [ -f "$PROFILE_DIR/.watch_pid" ]; then
         local old_pid
         old_pid=$(cat "$PROFILE_DIR/.watch_pid")
         if [ "$old_pid" != "$$" ] && kill -0 "$old_pid" 2>/dev/null; then
-            kill "$old_pid" 2>/dev/null
-            sleep "$UNMIRROR_SETTLE_DELAY"
+            # Kill the process group to get all children
+            kill -- -"$old_pid" 2>/dev/null || kill "$old_pid" 2>/dev/null
+            # Wait for it to actually die
+            for _ in {1..10}; do
+                kill -0 "$old_pid" 2>/dev/null || break
+                sleep 0.1
+            done
         fi
     fi
 
@@ -740,7 +766,11 @@ cmd_watch() {
     # Save PID for stopping later
     echo $$ > "$PROFILE_DIR/.watch_pid"
 
-    # Initial auto-apply
+    # Cleanup on exit
+    trap 'rm -f "$PROFILE_DIR/.watch_pid"; exit' EXIT INT TERM
+
+    # Initial auto-apply (with delay to let sway stabilize after reload)
+    sleep 0.5
     cmd_auto 2>&1 | tee -a "$log_file"
 
     # Track last apply time to avoid loops (use file since subshell)
@@ -749,6 +779,13 @@ cmd_watch() {
 
     # Keep watching (restart subscription if it exits)
     while true; do
+        # Check if sway is responsive before subscribing
+        if ! swaymsg -t get_version >/dev/null 2>&1; then
+            echo "Sway not responsive, waiting..." | tee -a "$log_file"
+            sleep 1
+            continue
+        fi
+
         swaymsg -t subscribe '["output"]' | while read -r _; do
             # Debounce: ignore events within DEBOUNCE_INTERVAL seconds of last apply
             local last_apply now
@@ -761,19 +798,18 @@ cmd_watch() {
             echo "" | tee -a "$log_file"
             echo "Display change detected at $(date), waiting for displays to settle..." | tee -a "$log_file"
 
-            # Wait for displays to stabilize (max SETTLE_MAX_WAIT seconds)
-            local prev_sig=""
-            local i=0
+            # Wait for displays to be ready (stable signature + valid modes)
+            local prev_sig="" i=0
             while [ "$i" -lt "$SETTLE_MAX_WAIT" ]; do
                 sleep "$SETTLE_CHECK_INTERVAL"
-                i=$((i + 1))
                 local curr_sig
-                curr_sig=$(get_current_signature)
-                if [ "$curr_sig" = "$prev_sig" ]; then
-                    echo "Displays stable after ${i}s" | tee -a "$log_file"
+                curr_sig=$(get_current_signature 2>/dev/null) || continue
+                if [ "$curr_sig" = "$prev_sig" ] && outputs_ready; then
+                    echo "Displays ready after ${i} checks" | tee -a "$log_file"
                     break
                 fi
                 prev_sig=$curr_sig
+                i=$((i + 1))
             done
 
             # Auto-apply matching profile
@@ -783,8 +819,6 @@ cmd_watch() {
         echo "Subscription ended, restarting..." | tee -a "$log_file"
         sleep "$SUBSCRIPTION_RESTART_DELAY"
     done
-
-    rm -f "$PROFILE_DIR/.watch_pid"
 }
 
 # Stop watching
