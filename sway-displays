@@ -701,11 +701,23 @@ get_profile_signature() {
     jq -r '[.[] | select(.enabled == true) | "\(.make):\(.model):\(.serial)"] | sort | join("|")' "$file"
 }
 
+# Get current configuration signature (includes positions, scale, transform)
+get_config_signature() {
+    get_outputs | jq -r '[.[] | "\(.make):\(.model):\(.serial):\(.rect.x):\(.rect.y):\(.scale):\(.transform)"] | sort | join("|")'
+}
+
+# Get expected configuration signature from a profile file
+get_profile_config_signature() {
+    local file="$1"
+    jq -r '[.[] | select(.enabled == true) | "\(.make):\(.model):\(.serial):\(.x):\(.y):\(.scale):\(.transform)"] | sort | join("|")' "$file"
+}
+
 # Auto-detect and load matching profile
 cmd_auto() {
-    local current_sig matched_profile
+    local current_sig matched_profile matched_file
     current_sig=$(get_current_signature)
     matched_profile=""
+    matched_file=""
 
     echo "Current displays: $current_sig"
 
@@ -718,12 +730,24 @@ cmd_auto() {
 
         if [ "$current_sig" = "$profile_sig" ]; then
             matched_profile="$profile_name"
+            matched_file="$f"
             break
         fi
     done
 
     if [ -n "$matched_profile" ]; then
         echo "Matched profile: $matched_profile"
+
+        # Check if current config already matches the profile (skip if already applied)
+        local current_config profile_config
+        current_config=$(get_config_signature)
+        profile_config=$(get_profile_config_signature "$matched_file")
+
+        if [ "$current_config" = "$profile_config" ]; then
+            echo "Configuration already matches profile, skipping"
+            return 0
+        fi
+
         cmd_load "$matched_profile"
     else
         echo "No matching profile found for current displays"
