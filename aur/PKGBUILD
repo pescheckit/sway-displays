@@ -1,6 +1,6 @@
 # Maintainer: Bram <bram+sway@pescheck.io>
 pkgname=sway-displays
-pkgver=1.0.0
+pkgver=1.1.0
 pkgrel=1
 pkgdesc="Display manager for Sway window manager"
 arch=('any')
