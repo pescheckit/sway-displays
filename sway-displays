@@ -46,6 +46,29 @@ outputs_ready() {
     [ "$result" = "true" ]
 }
 
+# Expand workspace input (e.g. "1-7" or "1,2,3" or "1 2 3") into space-separated list
+parse_workspace_input() {
+    local input="$1"
+    local result=()
+
+    # Replace commas with spaces for uniform parsing
+    input="${input//,/ }"
+
+    for token in $input; do
+        if [[ "$token" =~ ^([0-9]+)-([0-9]+)$ ]]; then
+            local start="${BASH_REMATCH[1]}"
+            local end="${BASH_REMATCH[2]}"
+            for (( i=start; i<=end; i++ )); do
+                result+=("$i")
+            done
+        elif [[ -n "$token" ]]; then
+            result+=("$token")
+        fi
+    done
+
+    echo "${result[*]}"
+}
+
 # Build profile JSON from current state
 build_profile_json() {
     local outputs workspaces
@@ -127,7 +150,10 @@ apply_profile_from_file() {
             # Update sway's workspace-output bindings and move workspaces
             for ws in $workspaces; do
                 swaymsg "workspace $ws output $current_name" >/dev/null 2>&1 || true
-                swaymsg "workspace $ws; move workspace to output $current_name" >/dev/null 2>&1 || true
+                # Only move workspaces that actually exist (avoids flicker)
+                if swaymsg -t get_workspaces -r | jq -e --arg ws "$ws" '.[] | select(.name == $ws)' >/dev/null 2>&1; then
+                    swaymsg "workspace $ws; move workspace to output $current_name" >/dev/null 2>&1 || true
+                fi
             done
 
             # Track focused workspace
@@ -377,6 +403,25 @@ cmd_setup() {
         exit 0
     fi
 
+    # Step 3: Workspace assignment (only if more than one enabled display)
+    declare -A display_workspaces
+    if [ ${#enabled_displays[@]} -gt 1 ]; then
+        echo ""
+        echo "--- Step 3: Assign workspaces ---"
+        echo "Assign workspaces to each display (e.g. 1-7 or 1,2,3 or 1 2 3)"
+        echo "Press Enter to skip (keeps current workspace behavior)"
+        echo ""
+
+        for name in "${enabled_displays[@]}"; do
+            local info
+            info=$(get_outputs | jq -r '.[] | select(.name == "'"$name"'") | "\(.make) \(.model)"')
+            read -r -p "  $name ($info) workspaces: " ws_input
+            if [ -n "$ws_input" ]; then
+                display_workspaces[$name]=$(parse_workspace_input "$ws_input")
+            fi
+        done
+    fi
+
     # Apply settings
     echo ""
     echo "=== Applying configuration ==="
@@ -390,6 +435,30 @@ cmd_setup() {
         sleep "$OUTPUT_APPLY_DELAY"
     done
 
+    # Apply workspace assignments
+    local existing_workspaces
+    existing_workspaces=$(swaymsg -t get_workspaces -r | jq -r '.[].name')
+    local original_ws
+    original_ws=$(swaymsg -t get_workspaces -r | jq -r '.[] | select(.focused == true) | .name')
+    local needs_restore=false
+    for name in "${enabled_displays[@]}"; do
+        if [ -n "${display_workspaces[$name]:-}" ]; then
+            echo "  $name: workspaces ${display_workspaces[$name]}"
+            for ws in ${display_workspaces[$name]}; do
+                # Always set the binding
+                swaymsg "workspace $ws output $name" >/dev/null 2>&1 || true
+                # Only move workspaces that actually exist (avoids flicker)
+                if echo "$existing_workspaces" | grep -qx "$ws"; then
+                    swaymsg "workspace $ws; move workspace to output $name" >/dev/null 2>&1 || true
+                    needs_restore=true
+                fi
+            done
+        fi
+    done
+    if [ "$needs_restore" = true ] && [ -n "$original_ws" ]; then
+        swaymsg "workspace $original_ws" >/dev/null 2>&1 || true
+    fi
+
     # Disable outputs explicitly marked for disable
     for name in "${to_disable[@]}"; do
         swaymsg output "$name" disable
@@ -401,7 +470,12 @@ cmd_setup() {
     echo ""
     read -r -p "Save as profile? (name or Enter to skip): " profile_name
     if [ -n "$profile_name" ]; then
-        cmd_save "$profile_name"
+        # Save with user-defined workspace assignments if provided
+        if [ ${#display_workspaces[@]} -gt 0 ]; then
+            cmd_save_with_workspaces "$profile_name" display_workspaces
+        else
+            cmd_save "$profile_name"
+        fi
     fi
 
     echo "Done!"
@@ -617,6 +691,47 @@ cmd_unmirror() {
     rm -f "$PROFILE_DIR/.mirror_pids" "$PROFILE_DIR/.pre_mirror.json"
 }
 
+# Save current config with user-defined workspace assignments
+# $1 = profile name, $2 = name of associative array with workspace mappings
+cmd_save_with_workspaces() {
+    local name="$1"
+    local -n ws_map="$2"
+
+    name=$(sanitize_profile_name "$name")
+    if [ -z "$name" ]; then
+        echo "Invalid profile name"
+        return 1
+    fi
+
+    local file="$PROFILE_DIR/$name.json"
+
+    if [ -f "$file" ]; then
+        echo "Profile '$name' already exists."
+        read -r -p "Overwrite? (y/n) [n]: " overwrite
+        if [[ "$overwrite" != "y" && "$overwrite" != "Y" ]]; then
+            echo "Cancelled."
+            return 1
+        fi
+    fi
+
+    # Build base profile from current state
+    local profile
+    profile=$(build_profile_json)
+
+    # Override workspace assignments with user-defined values
+    for output_name in "${!ws_map[@]}"; do
+        local ws_list="${ws_map[$output_name]}"
+        local ws_json
+        ws_json=$(printf '%s\n' $ws_list | jq -R . | jq -s .)
+        profile=$(echo "$profile" | jq --arg name "$output_name" --argjson ws "$ws_json" '
+            [.[] | if .name == $name then .workspaces = $ws else . end]
+        ')
+    done
+
+    echo "$profile" > "$file"
+    echo "Saved to $file"
+}
+
 # Save current config as profile
 cmd_save() {
     local name="$1"
@@ -652,6 +767,76 @@ is_mirroring() {
     [ -f "$PROFILE_DIR/.mirror_pids" ] && return 0
     pgrep -f "sway-mirror" >/dev/null 2>&1 && return 0
     return 1
+}
+
+# Edit workspace assignments on an existing profile
+cmd_workspaces() {
+    local name="$1"
+
+    if [ -z "$name" ]; then
+        echo "Available profiles:"
+        for f in "$PROFILE_DIR"/*.json; do
+            [ -f "$f" ] && echo "  $(basename "$f" .json)"
+        done
+        echo ""
+        read -r -p "Profile name: " name
+    fi
+
+    name=$(sanitize_profile_name "$name")
+    if [ -z "$name" ]; then
+        echo "Invalid profile name"
+        return 1
+    fi
+
+    local file="$PROFILE_DIR/$name.json"
+    if [ ! -f "$file" ]; then
+        echo "Profile not found: $name"
+        return 1
+    fi
+
+    echo "=== Workspace Assignment: $name ==="
+    echo ""
+    echo "Current assignments:"
+    jq -r '.[] | select(.enabled == true) | "  \(.name) (\(.make) \(.model)): \(.workspaces // [] | join(", "))"' "$file"
+    echo ""
+    echo "Enter workspaces for each display (e.g. 1-7 or 1,2,3 or 1 2 3)"
+    echo "Press Enter to keep current assignment"
+    echo ""
+
+    local profile
+    profile=$(cat "$file")
+
+    local names
+    mapfile -t names < <(echo "$profile" | jq -r '.[] | select(.enabled == true) | .name')
+
+    for output_name in "${names[@]}"; do
+        local info current_ws
+        info=$(echo "$profile" | jq -r '.[] | select(.name == "'"$output_name"'") | "\(.make) \(.model)"')
+        current_ws=$(echo "$profile" | jq -r '.[] | select(.name == "'"$output_name"'") | .workspaces // [] | join(", ")')
+        local prompt="  $output_name ($info)"
+        [ -n "$current_ws" ] && prompt="$prompt [$current_ws]"
+        read -r -p "$prompt: " ws_input
+
+        if [ -n "$ws_input" ]; then
+            local ws_list
+            ws_list=$(parse_workspace_input "$ws_input")
+            local ws_json
+            ws_json=$(printf '%s\n' $ws_list | jq -R . | jq -s .)
+            profile=$(echo "$profile" | jq --arg name "$output_name" --argjson ws "$ws_json" '
+                [.[] | if .name == $name then .workspaces = $ws else . end]
+            ')
+        fi
+    done
+
+    echo "$profile" > "$file"
+    echo ""
+    echo "Updated workspace assignments in $name"
+
+    read -r -p "Apply now? (y/n) [y]: " apply
+    apply=${apply:-y}
+    if [[ "$apply" == "y" || "$apply" == "Y" ]]; then
+        cmd_load "$name"
+    fi
 }
 
 # Load a profile
@@ -876,6 +1061,7 @@ cmd_help() {
     echo "  unmirror              Stop mirroring"
     echo "  save [name]           Save current config as profile"
     echo "  load [name]           Load a saved profile (auto-stops mirror)"
+    echo "  workspaces [name]     Edit workspace assignments on a profile"
     echo "  profiles              List saved profiles"
     echo "  auto                  Auto-detect and load matching profile"
     echo "  watch                 Watch for display changes (daemon)"
@@ -910,8 +1096,9 @@ case "${1:-help}" in
     setup)             cmd_setup ;;
     mirror)            shift; cmd_mirror "$@" ;;
     unmirror)          cmd_unmirror ;;
-    save)              cmd_save "$2" ;;
-    load)              cmd_load "$2" ;;
+    save)              cmd_save "${2:-}" ;;
+    load)              cmd_load "${2:-}" ;;
+    workspaces)        cmd_workspaces "${2:-}" ;;
     profiles)          cmd_profiles ;;
     auto)              cmd_auto ;;
     watch)             cmd_watch ;;
