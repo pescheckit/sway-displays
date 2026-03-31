@@ -295,3 +295,71 @@ jobs:
           git add PKGBUILD .SRCINFO
           git commit -m "Update to v${{ env.VERSION }}" || echo "No changes to commit"
           git push || echo "Push failed - may need to set up AUR package first"
+
+  verify-packages:
+    name: Verify Package Installs
+    needs: [create-release, update-aur]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: debian:bookworm
+            method: apt
+          - distro: ubuntu:24.04
+            method: apt
+          - distro: archlinux:latest
+            method: aur
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.distro }}
+    steps:
+      - name: Get expected version
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/}"
+          VERSION="${VERSION#v}"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Install from APT repository
+        if: matrix.method == 'apt'
+        run: |
+          apt-get update
+          apt-get install -y curl gnupg
+
+          # Add signing key
+          curl -fsSL https://pescheckit.github.io/sway-displays/gpg.key \
+            | gpg --dearmor -o /usr/share/keyrings/sway-displays.gpg
+
+          # Add repository
+          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/sway-displays.gpg] https://pescheckit.github.io/sway-displays/apt stable main" \
+            > /etc/apt/sources.list.d/sway-displays.list
+
+          apt-get update
+          apt-get install -y sway-displays
+
+      - name: Install from AUR
+        if: matrix.method == 'aur'
+        run: |
+          # Install build dependencies
+          pacman -Syu --noconfirm base-devel git jq bc
+
+          # makepkg cannot run as root, create a build user
+          useradd -m builder
+          echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+          # Clone and build the AUR package
+          su - builder -c "
+            git clone https://aur.archlinux.org/sway-displays.git /tmp/sway-displays
+            cd /tmp/sway-displays
+            makepkg -si --noconfirm
+          "
+
+      - name: Verify version matches
+        run: |
+          INSTALLED_VERSION=$(sway-displays --version 2>&1 | grep -oP '[0-9]+\.[0-9]+\.[0-9]+')
+          echo "Expected: ${{ env.VERSION }}"
+          echo "Installed: $INSTALLED_VERSION"
+          if [ "$INSTALLED_VERSION" != "${{ env.VERSION }}" ]; then
+            echo "::error::Version mismatch! Expected ${{ env.VERSION }} but got $INSTALLED_VERSION"
+            exit 1
+          fi
+          echo "Version verified: $INSTALLED_VERSION"
