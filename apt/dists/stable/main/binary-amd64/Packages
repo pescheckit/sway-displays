@@ -1,5 +1,5 @@
 Package: sway-displays
-Version: 1.2.3-1
+Version: 1.2.4-1
 Architecture: all
 Maintainer: Bram <bram+sway@pescheck.io>
 Installed-Size: 47
@@ -9,11 +9,11 @@ Suggests: sway-mirror
 Homepage: https://github.com/pescheckit/sway-displays
 Priority: optional
 Section: utils
-Filename: pool/main/s/sway-displays/sway-displays_1.2.3-1_all.deb
-Size: 11018
-SHA256: 8e67ca039f046e78755bddd68872d8f82b9c9686c41d7aaf11fa096e9a393410
-SHA1: 15d425a9b60434ad9ddacd4a1ca55f616e01c220
-MD5sum: 63e22f80d0c750934ba997a8f3e6cabb
+Filename: pool/main/s/sway-displays/sway-displays_1.2.4-1_all.deb
+Size: 11020
+SHA256: 2aefb8279957c8a844be2ced8e9350fa7cc3a4795f8df44972dcf594010e9836
+SHA1: bfd2855bae4b775d6af851c259307be5c5aa73cb
+MD5sum: 51ea2d2bffeb1e5ce1d27061dd71a676
 Description: Display manager for Sway window manager
  A command-line tool for managing displays in Sway, including:
   - Interactive setup wizard for display configuration
