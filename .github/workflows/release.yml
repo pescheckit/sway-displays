@@ -269,6 +269,11 @@ jobs:
           # Update source URL
           sed -i "s|source=.*|source=(\"sway-displays-${{ env.VERSION }}.tar.gz::https://github.com/pescheckit/sway-displays/archive/refs/tags/${{ env.VERSION }}.tar.gz\")|" PKGBUILD
 
+          # Ensure prepare() function exists to patch VERSION in script
+          if ! grep -q 'prepare()' PKGBUILD; then
+            sed -i '/^package()/i prepare() {\n    cd "$srcdir/$pkgname-$pkgver"\n    sed -i "s/^VERSION=\\".*\\"/VERSION=\\"$pkgver\\"/" sway-displays\n}\n' PKGBUILD
+          fi
+
           # Generate .SRCINFO
           {
             echo "pkgbase = sway-displays"

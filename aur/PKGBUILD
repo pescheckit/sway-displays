@@ -11,6 +11,11 @@ optdepends=('sway-mirror: for display mirroring support')
 source=("$pkgname-$pkgver.tar.gz::https://github.com/pescheckit/sway-displays/archive/refs/tags/$pkgver.tar.gz")
 sha256sums=('SKIP')
 
+prepare() {
+    cd "$srcdir/$pkgname-$pkgver"
+    sed -i "s/^VERSION=\".*\"/VERSION=\"$pkgver\"/" sway-displays
+}
+
 package() {
     cd "$srcdir/$pkgname-$pkgver"
     install -Dm755 sway-displays "$pkgdir/usr/bin/sway-displays"
