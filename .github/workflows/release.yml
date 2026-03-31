@@ -8,6 +8,8 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 jobs:
   build-deb:
@@ -57,8 +59,99 @@ jobs:
           name: release-artifacts
           path: dist/
 
-  create-release:
+  publish-apt:
+    name: Publish APT Repository
     needs: build-deb
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout gh-pages branch
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+        continue-on-error: true
+
+      - name: Initialize gh-pages if needed
+        run: |
+          if [ ! -d "gh-pages" ]; then
+            mkdir -p gh-pages
+            cd gh-pages
+            git init
+            git checkout -b gh-pages
+          fi
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+          path: artifacts
+
+      - name: Install reprepro
+        run: sudo apt-get update && sudo apt-get install -y reprepro
+
+      - name: Import GPG key
+        run: |
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | base64 -d | gpg --batch --import
+
+      - name: Setup reprepro config
+        run: |
+          mkdir -p gh-pages/apt/conf
+          GPG_KEY_ID=$(gpg --list-secret-keys --keyid-format LONG | grep sec | head -1 | sed 's/.*\/\([^ ]*\) .*/\1/')
+          printf '%s\n' \
+            "Origin: PesCheckIT" \
+            "Label: sway-displays" \
+            "Codename: stable" \
+            "Architectures: amd64" \
+            "Components: main" \
+            "Description: Sway Displays Package Repository" \
+            "SignWith: ${GPG_KEY_ID}" \
+            > gh-pages/apt/conf/distributions
+
+      - name: Add packages to repository
+        run: |
+          cd gh-pages/apt
+          for deb in ../../artifacts/*.deb; do
+            PKG_NAME=$(dpkg-deb -f "$deb" Package)
+            reprepro remove stable "$PKG_NAME" 2>/dev/null || true
+            reprepro includedeb stable "$deb"
+          done
+
+      - name: Export GPG public key
+        run: |
+          gpg --armor --export > gh-pages/gpg.key
+
+      - name: Create index page
+        run: |
+          cat > gh-pages/index.html <<'HTMLEOF'
+          <!DOCTYPE html>
+          <html>
+          <head><title>Sway Displays APT Repository</title></head>
+          <body>
+            <h1>Sway Displays APT Repository</h1>
+            <pre>
+          # Import GPG key
+          curl -fsSL https://pescheckit.github.io/sway-displays/gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/sway-displays.gpg
+
+          # Add repository
+          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/sway-displays.gpg] https://pescheckit.github.io/sway-displays/apt stable main" | \
+            sudo tee /etc/apt/sources.list.d/sway-displays.list
+
+          # Install
+          sudo apt update
+          sudo apt install sway-displays
+            </pre>
+          </body>
+          </html>
+          HTMLEOF
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./gh-pages
+
+  create-release:
+    needs: [build-deb, publish-apt]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -93,34 +186,35 @@ jobs:
           body: |
             ## Installation
 
-            ### Debian/Ubuntu
+            ### APT Repository (Debian/Ubuntu) — recommended
             ```bash
-            wget https://github.com/pescheckit/sway-displays/releases/download/v${{ env.VERSION }}/sway-displays_${{ env.VERSION }}_all.deb
-            wget https://github.com/pescheckit/sway-displays/releases/download/v${{ env.VERSION }}/sway-displays_${{ env.VERSION }}_all.deb.sha256
-            sha256sum -c sway-displays_${{ env.VERSION }}_all.deb.sha256
+            # Add signing key
+            curl -fsSL https://pescheckit.github.io/sway-displays/gpg.key \
+              | sudo gpg --dearmor -o /usr/share/keyrings/sway-displays.gpg
+
+            # Add repository
+            echo "deb [arch=amd64 signed-by=/usr/share/keyrings/sway-displays.gpg] \
+            https://pescheckit.github.io/sway-displays/apt stable main" \
+              | sudo tee /etc/apt/sources.list.d/sway-displays.list
+
+            sudo apt update && sudo apt install sway-displays
+            ```
+
+            ### Manual .deb install
+            ```bash
+            wget https://github.com/pescheckit/sway-displays/releases/download/${{ github.ref_name }}/sway-displays_${{ env.VERSION }}_all.deb
             sudo dpkg -i sway-displays_${{ env.VERSION }}_all.deb
-            sudo apt-get install -f  # Install dependencies if needed
+            sudo apt-get install -f
             ```
 
             ### Arch Linux (AUR)
             ```bash
             yay -S sway-displays
-            # or
-            paru -S sway-displays
             ```
 
-            ### Manual Install (with verification)
+            ### Manual Install
             ```bash
-            curl -fsSL https://raw.githubusercontent.com/pescheckit/sway-displays/v${{ env.VERSION }}/install.sh | bash
-            ```
-
-            Or download and verify manually:
-            ```bash
-            wget https://github.com/pescheckit/sway-displays/releases/download/v${{ env.VERSION }}/sway-displays
-            wget https://github.com/pescheckit/sway-displays/releases/download/v${{ env.VERSION }}/sway-displays.sha256
-            sha256sum -c sway-displays.sha256
-            chmod +x sway-displays
-            mv sway-displays ~/.local/bin/
+            curl -fsSL https://raw.githubusercontent.com/pescheckit/sway-displays/${{ github.ref_name }}/install.sh | bash
             ```
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
