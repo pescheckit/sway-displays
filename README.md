@@ -2,13 +2,31 @@
 
 Interactive display manager for Sway.
 
-## Quick Start
+## Install
+
+### APT (Debian/Ubuntu)
 
 ```bash
-git clone https://github.com/pescheckit/sway-displays.git
-cd sway-displays
-chmod +x sway-displays
-sudo ln -s "$(pwd)/sway-displays" /usr/local/bin/sway-displays
+curl -fsSL https://pescheckit.github.io/sway-displays/gpg.key \
+  | sudo gpg --dearmor -o /usr/share/keyrings/sway-displays.gpg
+
+echo "deb [arch=amd64 signed-by=/usr/share/keyrings/sway-displays.gpg] \
+https://pescheckit.github.io/sway-displays/apt stable main" \
+  | sudo tee /etc/apt/sources.list.d/sway-displays.list
+
+sudo apt update && sudo apt install sway-displays
+```
+
+### AUR (Arch Linux)
+
+```bash
+yay -S sway-displays
+```
+
+### Manual
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/pescheckit/sway-displays/main/install.sh | bash
 ```
 
 ## Requirements
