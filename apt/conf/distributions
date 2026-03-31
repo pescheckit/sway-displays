@@ -1,0 +1,7 @@
+Origin: PesCheckIT
+Label: sway-displays
+Codename: stable
+Architectures: amd64
+Components: main
+Description: Sway Displays Package Repository
+SignWith: 1D4C907F39FFB121

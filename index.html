@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head><title>Sway Displays APT Repository</title></head>
+<body>
+  <h1>Sway Displays APT Repository</h1>
+  <pre>
+# Import GPG key
+curl -fsSL https://pescheckit.github.io/sway-displays/gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/sway-displays.gpg
+
+# Add repository
+echo "deb [arch=amd64 signed-by=/usr/share/keyrings/sway-displays.gpg] https://pescheckit.github.io/sway-displays/apt stable main" | \
+  sudo tee /etc/apt/sources.list.d/sway-displays.list
+
+# Install
+sudo apt update
+sudo apt install sway-displays
+  </pre>
+</body>
+</html>

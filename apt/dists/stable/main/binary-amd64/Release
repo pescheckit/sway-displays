@@ -1,0 +1,5 @@
+Component: main
+Origin: PesCheckIT
+Label: sway-displays
+Architecture: amd64
+Description: Sway Displays Package Repository

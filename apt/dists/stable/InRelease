@@ -1,0 +1,38 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+Origin: PesCheckIT
+Label: sway-displays
+Codename: stable
+Date: Tue, 31 Mar 2026 10:50:37 UTC
+Architectures: amd64
+Components: main
+Description: Sway Displays Package Repository
+MD5Sum:
+ 10215dae826a5c4dbd2b7b1434e58abd 876 main/binary-amd64/Packages
+ baed449145232dd9e466be63be5848c1 555 main/binary-amd64/Packages.gz
+ aad8a765d05174ea3213dd55539f1168 122 main/binary-amd64/Release
+SHA1:
+ f125931db64b69268c7b252df523c0ff54825624 876 main/binary-amd64/Packages
+ 0ba198c5f4a18bc0100d48e9de462669cd3955a6 555 main/binary-amd64/Packages.gz
+ 3f9eda538f65e339d6f2ab4bfd7bb7c5cc890f67 122 main/binary-amd64/Release
+SHA256:
+ 495ff1468775b6f46f8409126541554d0fe0e103a3ba3441eeda18c62fe2fcf3 876 main/binary-amd64/Packages
+ e4b05298b52aca02f560e0e824e0da52230346cf6e0d0ac3ea9fafa2aa93c3c8 555 main/binary-amd64/Packages.gz
+ bc97ad16bbdb75180126f38de8244126ace80f3f54b0a9222a1c34b1c9f48457 122 main/binary-amd64/Release
+-----BEGIN PGP SIGNATURE-----
+
+iQIzBAEBCgAdFiEETGCh7mMuezleOhCxHUyQfzn/sSEFAmnLpv0ACgkQHUyQfzn/
+sSHwwg/9EwnuWcy4kl6pPrPkzFBZhFZyU+AIYFR+Np+Wk5K8b2yNK0R/XFqOOQw1
+DtVwaJ6g+p3EKuRmIrV5N7+4RjcjwQtCRNRiHF1kPsszwXlPw440xe/HcAGcEJWW
+G0NGL133mq7vn3fv38PRMe+xlYstHMlUo9HC2Bu/kjiqMIj+G5Zo7UvIfjXynS1r
+BKvckdlIbqjaWx10foReCk5msmGAwER+acoOebHtHFj9hissvfQ0lQvQ5jhUdfy3
+s3HfP2zLozOkzHkZmWWA9Xj/x1sPMSi5C0jbaM2g59bliQe72YEkjsB4I3vjB1D/
+eE4H29zp4edvEqfEQKBzWBBwMrQtDJtxl3xZYLvcyiLHZQ4XNuXxxLhpPdKsSLyX
+dOgBjTcNvmJSQkx0Psiwv7OlZgfOdgb0Z4w0KTqXjrD9TAMrlvVrhX2vc8kvQRtE
+WHqziCFOSumPwIxwjn1ecEo9/He2OhA7qGJjg7mE6gzUdz86ip9ZUTYSIrpaIA6e
+BQX0x3UYt0k2c1f/MhYax3NAYGiu5h5qXRXuWnKQH30+E23LvbE5o2urK2PclUtJ
+iS1LxfFsSgrIAcB0LYxpLWkrLZd4nnGiKSDqkrpb0gF/NMSEhvR8cIe88E6zacsF
+pkuePmDdVC8IxEY8ts+/km02g3rojGsOCL9u/k1+hXwvog+AbLo=
+=Z1rB
+-----END PGP SIGNATURE-----
