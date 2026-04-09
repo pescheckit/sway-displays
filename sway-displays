@@ -46,6 +46,21 @@ outputs_ready() {
     [ "$result" = "true" ]
 }
 
+# Pause watch daemon during interactive commands (setup, workspaces)
+watch_pause() {
+    touch "$PROFILE_DIR/.setup_active"
+}
+
+# Resume watch daemon after interactive commands complete
+watch_resume() {
+    rm -f "$PROFILE_DIR/.setup_active"
+}
+
+# Check if watch should skip auto-apply (interactive command in progress)
+watch_is_paused() {
+    [ -f "$PROFILE_DIR/.setup_active" ]
+}
+
 # Expand workspace input (e.g. "1-7" or "1,2,3" or "1 2 3") into space-separated list
 parse_workspace_input() {
     local input="$1"
@@ -405,6 +420,7 @@ cmd_setup() {
 
     # Step 3: Workspace assignment (only if more than one enabled display)
     declare -A display_workspaces
+    local has_workspace_assignments=false
     if [ ${#enabled_displays[@]} -gt 1 ]; then
         echo ""
         echo "--- Step 3: Assign workspaces ---"
@@ -418,9 +434,14 @@ cmd_setup() {
             read -r -p "  $name ($info) workspaces: " ws_input
             if [ -n "$ws_input" ]; then
                 display_workspaces[$name]=$(parse_workspace_input "$ws_input")
+                has_workspace_assignments=true
             fi
         done
     fi
+
+    # Pause watch daemon to prevent it from undoing our changes
+    watch_pause
+    trap 'watch_resume' EXIT INT TERM
 
     # Apply settings
     echo ""
@@ -435,28 +456,30 @@ cmd_setup() {
         sleep "$OUTPUT_APPLY_DELAY"
     done
 
-    # Apply workspace assignments
-    local existing_workspaces
-    existing_workspaces=$(swaymsg -t get_workspaces -r | jq -r '.[].name')
-    local original_ws
-    original_ws=$(swaymsg -t get_workspaces -r | jq -r '.[] | select(.focused == true) | .name')
-    local needs_restore=false
-    for name in "${enabled_displays[@]}"; do
-        if [ -n "${display_workspaces[$name]:-}" ]; then
-            echo "  $name: workspaces ${display_workspaces[$name]}"
-            for ws in ${display_workspaces[$name]}; do
-                # Always set the binding
-                swaymsg "workspace $ws output $name" >/dev/null 2>&1 || true
-                # Only move workspaces that actually exist (avoids flicker)
-                if echo "$existing_workspaces" | grep -qx "$ws"; then
-                    swaymsg "workspace $ws; move workspace to output $name" >/dev/null 2>&1 || true
-                    needs_restore=true
-                fi
-            done
+    # Apply workspace assignments (only if any were provided)
+    if [ "$has_workspace_assignments" = true ]; then
+        local existing_workspaces
+        existing_workspaces=$(swaymsg -t get_workspaces -r | jq -r '.[].name')
+        local original_ws
+        original_ws=$(swaymsg -t get_workspaces -r | jq -r '.[] | select(.focused == true) | .name')
+        local needs_restore=false
+        for name in "${enabled_displays[@]}"; do
+            if [ -n "${display_workspaces[$name]:-}" ]; then
+                echo "  $name: workspaces ${display_workspaces[$name]}"
+                for ws in ${display_workspaces[$name]}; do
+                    # Always set the binding
+                    swaymsg "workspace $ws output $name" >/dev/null 2>&1 || true
+                    # Only move workspaces that actually exist (avoids flicker)
+                    if echo "$existing_workspaces" | grep -qx "$ws"; then
+                        swaymsg "workspace $ws; move workspace to output $name" >/dev/null 2>&1 || true
+                        needs_restore=true
+                    fi
+                done
+            fi
+        done
+        if [ "$needs_restore" = true ] && [ -n "$original_ws" ]; then
+            swaymsg "workspace $original_ws" >/dev/null 2>&1 || true
         fi
-    done
-    if [ "$needs_restore" = true ] && [ -n "$original_ws" ]; then
-        swaymsg "workspace $original_ws" >/dev/null 2>&1 || true
     fi
 
     # Disable outputs explicitly marked for disable
@@ -471,7 +494,7 @@ cmd_setup() {
     read -r -p "Save as profile? (name or Enter to skip): " profile_name
     if [ -n "$profile_name" ]; then
         # Save with user-defined workspace assignments if provided
-        if [ ${#display_workspaces[@]} -gt 0 ]; then
+        if [ "$has_workspace_assignments" = true ]; then
             cmd_save_with_workspaces "$profile_name" display_workspaces
         else
             cmd_save "$profile_name"
@@ -794,6 +817,10 @@ cmd_workspaces() {
         return 1
     fi
 
+    # Pause watch daemon to prevent it from undoing our changes
+    watch_pause
+    trap 'watch_resume' EXIT INT TERM
+
     echo "=== Workspace Assignment: $name ==="
     echo ""
     echo "Current assignments:"
@@ -883,12 +910,12 @@ get_current_signature() {
 # Get hardware signature from a profile file
 get_profile_signature() {
     local file="$1"
-    jq -r '[.[] | select(.enabled == true) | "\(.make):\(.model):\(.serial)"] | sort | join("|")' "$file"
+    jq -r '[.[] | "\(.make):\(.model):\(.serial)"] | sort | join("|")' "$file"
 }
 
 # Get current configuration signature (includes positions, scale, transform)
 get_config_signature() {
-    get_outputs | jq -r '[.[] | "\(.make):\(.model):\(.serial):\(.rect.x):\(.rect.y):\(.scale):\(.transform)"] | sort | join("|")'
+    get_outputs | jq -r '[.[] | select(.active == true) | "\(.make):\(.model):\(.serial):\(.rect.x):\(.rect.y):\(.scale):\(.transform)"] | sort | join("|")'
 }
 
 # Get expected configuration signature from a profile file
@@ -899,6 +926,11 @@ get_profile_config_signature() {
 
 # Auto-detect and load matching profile
 cmd_auto() {
+    local force=false
+    if [ "${1:-}" = "--force" ]; then
+        force=true
+    fi
+
     local current_sig matched_profile matched_file
     current_sig=$(get_current_signature)
     matched_profile=""
@@ -928,7 +960,7 @@ cmd_auto() {
         current_config=$(get_config_signature)
         profile_config=$(get_profile_config_signature "$matched_file")
 
-        if [ "$current_config" = "$profile_config" ]; then
+        if [ "$force" = false ] && [ "$current_config" = "$profile_config" ]; then
             echo "Configuration already matches profile, skipping"
             return 0
         fi
@@ -937,6 +969,20 @@ cmd_auto() {
     else
         echo "No matching profile found for current displays"
         echo "Save one with: sway-displays save <name>"
+
+        # Safety: if no outputs are active, enable the first connected one
+        # This prevents leaving the user with no usable display
+        local active_count
+        active_count=$(swaymsg -t get_outputs -r | jq '[.[] | select(.active == true)] | length')
+        if [ "$active_count" -eq 0 ]; then
+            local fallback
+            fallback=$(swaymsg -t get_outputs -r | jq -r '.[0].name')
+            if [ -n "$fallback" ]; then
+                echo "No active outputs! Enabling $fallback as fallback"
+                swaymsg output "$fallback" enable >/dev/null 2>&1 || true
+            fi
+        fi
+
         return 1
     fi
 }
@@ -986,6 +1032,10 @@ cmd_watch() {
     local last_apply_file="$PROFILE_DIR/.last_apply"
     echo "0" > "$last_apply_file"
 
+    # Track last hardware signature to detect actual display changes
+    local last_sig_file="$PROFILE_DIR/.last_sig"
+    get_current_signature > "$last_sig_file" 2>/dev/null
+
     # Keep watching (restart subscription if it exits)
     while true; do
         # Check if sway is responsive before subscribing
@@ -1021,8 +1071,25 @@ cmd_watch() {
                 i=$((i + 1))
             done
 
-            # Auto-apply matching profile
-            cmd_auto 2>&1 | tee -a "$log_file"
+            # Skip if an interactive command (setup/workspaces) is in progress
+            if watch_is_paused; then
+                echo "Interactive command in progress, skipping auto-apply" | tee -a "$log_file"
+                continue
+            fi
+
+            # Check if displays actually changed (not just a spurious event)
+            local prev_hw_sig current_hw_sig
+            prev_hw_sig=$(cat "$last_sig_file" 2>/dev/null)
+            current_hw_sig=$(get_current_signature 2>/dev/null)
+            echo "$current_hw_sig" > "$last_sig_file"
+
+            if [ "$current_hw_sig" != "$prev_hw_sig" ]; then
+                echo "Hardware changed, forcing profile apply" | tee -a "$log_file"
+                cmd_auto --force 2>&1 | tee -a "$log_file"
+            else
+                # Auto-apply matching profile
+                cmd_auto 2>&1 | tee -a "$log_file"
+            fi
             date +%s > "$last_apply_file"
         done
         echo "Subscription ended, restarting..." | tee -a "$log_file"
