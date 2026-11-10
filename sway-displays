@@ -132,7 +132,8 @@ apply_profile_from_file() {
     local use_hardware_matching="${2:-true}"
 
     jq -c '.[]' "$file" | while read -r output; do
-        local saved_name make model serial x y scale transform enabled workspaces focused_ws
+        local saved_name make model serial x y scale transform enabled focused_ws
+        local -a workspaces=()
         saved_name=$(echo "$output" | jq -r '.name')
         make=$(echo "$output" | jq -r '.make // empty')
         model=$(echo "$output" | jq -r '.model // empty')
@@ -142,7 +143,7 @@ apply_profile_from_file() {
         scale=$(echo "$output" | jq -r '.scale')
         transform=$(echo "$output" | jq -r '.transform')
         enabled=$(echo "$output" | jq -r '.enabled')
-        workspaces=$(echo "$output" | jq -r '.workspaces // [] | .[]')
+        mapfile -t workspaces < <(echo "$output" | jq -r '.workspaces // [] | .[]')
         focused_ws=$(echo "$output" | jq -r '.focused_workspace // empty')
 
         # Find current output name
@@ -163,11 +164,11 @@ apply_profile_from_file() {
             sleep "$OUTPUT_APPLY_DELAY"
 
             # Update sway's workspace-output bindings and move workspaces
-            for ws in $workspaces; do
-                swaymsg "workspace $ws output $current_name" >/dev/null 2>&1 || true
+            for ws in "${workspaces[@]}"; do
+                swaymsg "workspace \"$ws\" output \"$current_name\"" >/dev/null 2>&1 || true
                 # Only move workspaces that actually exist (avoids flicker)
                 if swaymsg -t get_workspaces -r | jq -e --arg ws "$ws" '.[] | select(.name == $ws)' >/dev/null 2>&1; then
-                    swaymsg "workspace $ws; move workspace to output $current_name" >/dev/null 2>&1 || true
+                    swaymsg "workspace \"$ws\"; move workspace to output \"$current_name\"" >/dev/null 2>&1 || true
                 fi
             done
 
@@ -188,7 +189,7 @@ apply_profile_from_file() {
         focus_workspace=$(cat "$PROFILE_DIR/.focus")
         rm -f "$PROFILE_DIR/.focus"
         if [ -n "$focus_workspace" ]; then
-            swaymsg "workspace $focus_workspace" >/dev/null 2>&1 || true
+            swaymsg "workspace \"$focus_workspace\"" >/dev/null 2>&1 || true
         fi
     fi
 }
