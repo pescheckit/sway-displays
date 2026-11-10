@@ -9,7 +9,7 @@ pkgbase = sway-displays
 	depends = jq
 	depends = bc
 	depends = sway
-	optdepends = sway-mirror: for display mirroring support
+	optdepends = sway-mirror>=1.1.0: for display mirroring support
 	source = sway-displays-1.0.0.tar.gz::https://github.com/pescheckit/sway-displays/archive/refs/tags/1.0.0.tar.gz
 	sha256sums = SKIP
 

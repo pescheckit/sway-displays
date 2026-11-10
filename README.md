@@ -34,7 +34,7 @@ curl -fsSL https://raw.githubusercontent.com/pescheckit/sway-displays/main/insta
 - Sway
 - `jq`
 - `bc`
-- [Rust/Cargo](https://rustup.rs/) + wayland-dev libs (only for mirroring, see [sway-mirror](https://github.com/pescheckit/sway-mirror))
+- [sway-mirror](https://github.com/pescheckit/sway-mirror) >= 1.1.0 (only for mirroring; auto-built if missing, which needs [Rust/Cargo](https://rustup.rs/) + wayland/gbm/egl/drm dev libs)
 
 ## Commands
 
@@ -57,6 +57,7 @@ unmirror              Stop mirroring
 -s, --scale <mode>     fit (default), fill, stretch, center
 --cursor <bool>        Include cursor (default: true)
 -w, --workspaces <bool> Move workspaces to source (default: true)
+-c, --capture <method>  auto (default), export-dmabuf, image-copy, screencopy
 ```
 
 ## Examples
@@ -72,6 +73,8 @@ sway-displays watch &         # Watch for changes in background
 sway-displays mirror          # Interactive mode (asks for options)
 sway-displays mirror eDP-1    # Mirror eDP-1 to all others
 sway-displays mirror eDP-1 -s fill  # Use fill scaling mode
+sway-displays mirror eDP-1 --cursor false -w false  # No cursor, keep workspaces
+sway-displays mirror eDP-1 -c screencopy  # Force CPU-copy capture (GPU fallback)
 sway-displays unmirror        # Stop mirroring
 ```
 

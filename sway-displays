@@ -15,6 +15,7 @@ SETTLE_CHECK_INTERVAL=0.3
 SETTLE_MAX_WAIT=10
 SUBSCRIPTION_RESTART_DELAY=1
 UNMIRROR_SETTLE_DELAY=0.3
+SWAY_MIRROR_VERSION="1.1.0"  # sway-mirror release tag built by install_sway_mirror
 OUTPUT_APPLY_DELAY=0.2
 
 PROFILE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/displays"
@@ -535,15 +536,19 @@ install_sway_mirror() {
 
     echo "Installing sway-mirror..."
 
-    # Clone if not exists
+    # Clone if not exists, then check out the pinned release
     if [ ! -d "$install_dir" ]; then
-        echo "Cloning sway-mirror..."
-        git clone https://github.com/pescheckit/sway-mirror.git "$install_dir" || return 1
+        echo "Cloning sway-mirror $SWAY_MIRROR_VERSION..."
+        git clone --branch "$SWAY_MIRROR_VERSION" https://github.com/pescheckit/sway-mirror.git "$install_dir" || return 1
+    else
+        echo "Updating sway-mirror to $SWAY_MIRROR_VERSION..."
+        git -C "$install_dir" fetch --tags origin || return 1
+        git -C "$install_dir" -c advice.detachedHead=false checkout "$SWAY_MIRROR_VERSION" || return 1
     fi
 
     # Build
     echo "Building sway-mirror (this may take a minute)..."
-    (cd "$install_dir" && cargo build --release) || return 1
+    (cd "$install_dir" && cargo build --release --locked) || return 1
 
     if [ -x "$install_dir/target/release/sway-mirror" ]; then
         echo "sway-mirror installed successfully!"
@@ -560,6 +565,7 @@ cmd_mirror() {
     local scale_mode="fit"
     local cursor="true"
     local workspaces="true"
+    local capture="auto"
 
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -574,6 +580,10 @@ cmd_mirror() {
                 ;;
             -w|--workspaces)
                 workspaces="$2"
+                shift 2
+                ;;
+            -c|--capture)
+                capture="$2"
                 shift 2
                 ;;
             *)
@@ -666,7 +676,7 @@ cmd_mirror() {
     # Clear any existing pids file
     rm -f "$PROFILE_DIR/.mirror_pids"
 
-    echo "Mirroring $source to all other displays (scale: $scale_mode, cursor: $cursor, workspaces: $workspaces)..."
+    echo "Mirroring $source to all other displays (scale: $scale_mode, cursor: $cursor, workspaces: $workspaces, capture: $capture)..."
 
     # Build target list and mirror args
     local targets=()
@@ -679,9 +689,8 @@ cmd_mirror() {
     done
 
     # Add options
-    mirror_args+=("-s" "$scale_mode")
-    [[ "$workspaces" == "true" ]] && mirror_args+=("-w")
-    [[ "$cursor" == "true" ]] && mirror_args+=("--cursor")
+    # sway-mirror >= 1.1.0 defaults cursor/workspaces to true, so pass explicit values
+    mirror_args+=("-s" "$scale_mode" "-w" "$workspaces" "--cursor" "$cursor" "-c" "$capture")
 
     # Run sway-mirror (mirrors to all targets in one process)
     "$sway_mirror_bin" "$source" "${targets[@]}" "${mirror_args[@]}" &
@@ -1140,6 +1149,7 @@ cmd_help() {
     echo "  -s, --scale <mode>    fit (default), fill, stretch, center"
     echo "  --cursor <bool>       Include cursor (default: true)"
     echo "  -w, --workspaces <bool> Move workspaces to source (default: true)"
+    echo "  -c, --capture <method> auto (default), export-dmabuf, image-copy, screencopy"
     echo ""
     echo "Examples:"
     echo "  sway-displays mirror              # Interactive mode"
