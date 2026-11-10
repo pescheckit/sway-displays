@@ -13,7 +13,7 @@ Package: sway-displays
 Architecture: all
 Depends: ${misc:Depends}, bash, jq, bc, sway
 Recommends: git
-Suggests: sway-mirror
+Suggests: sway-mirror (>= 1.1.0)
 Description: Display manager for Sway window manager
  A command-line tool for managing displays in Sway, including:
   - Interactive setup wizard for display configuration

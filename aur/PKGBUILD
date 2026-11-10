@@ -7,7 +7,7 @@ arch=('any')
 url="https://github.com/pescheckit/sway-displays"
 license=('MIT')
 depends=('bash' 'jq' 'bc' 'sway')
-optdepends=('sway-mirror: for display mirroring support')
+optdepends=('sway-mirror>=1.1.0: for display mirroring support')
 source=("$pkgname-$pkgver.tar.gz::https://github.com/pescheckit/sway-displays/archive/refs/tags/$pkgver.tar.gz")
 sha256sums=('SKIP')
 

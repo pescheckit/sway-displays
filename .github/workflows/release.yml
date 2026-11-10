@@ -13,10 +13,10 @@ permissions:
 
 jobs:
   build-deb:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install build dependencies
         run: |
@@ -54,7 +54,7 @@ jobs:
           sha256sum sway-displays_${{ env.VERSION }}_all.deb > sway-displays_${{ env.VERSION }}_all.deb.sha256
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-artifacts
           path: dist/
@@ -62,10 +62,10 @@ jobs:
   publish-apt:
     name: Publish APT Repository
     needs: build-deb
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout gh-pages branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: gh-pages
           path: gh-pages
@@ -81,7 +81,7 @@ jobs:
           fi
 
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-artifacts
           path: artifacts
@@ -145,17 +145,17 @@ jobs:
           HTMLEOF
 
       - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.1.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./gh-pages
 
   create-release:
     needs: [build-deb, publish-apt]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Get version
         run: |
@@ -164,7 +164,7 @@ jobs:
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-artifacts
           path: ./dist
@@ -173,7 +173,7 @@ jobs:
         run: cp install.sh dist/
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           name: v${{ env.VERSION }}
           files: |
@@ -221,7 +221,7 @@ jobs:
 
   update-aur:
     needs: create-release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Check if AUR secret exists
         id: check-secret
@@ -237,7 +237,7 @@ jobs:
 
       - name: Checkout
         if: steps.check-secret.outputs.exists == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Get version
         if: steps.check-secret.outputs.exists == 'true'
@@ -287,7 +287,7 @@ jobs:
             echo $'\t'"depends = jq"
             echo $'\t'"depends = bc"
             echo $'\t'"depends = sway"
-            echo $'\t'"optdepends = sway-mirror: for display mirroring support"
+            echo $'\t'"optdepends = sway-mirror>=1.1.0: for display mirroring support"
             echo $'\t'"source = sway-displays-${{ env.VERSION }}.tar.gz::https://github.com/pescheckit/sway-displays/archive/refs/tags/${{ env.VERSION }}.tar.gz"
             echo $'\t'"sha256sums = SKIP"
             echo ""
@@ -308,13 +308,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - distro: debian:bookworm
+          - distro: debian:12.15
             method: apt
           - distro: ubuntu:24.04
             method: apt
-          - distro: archlinux:latest
+          - distro: archlinux:base-20261108.0.623074
             method: aur
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     container:
       image: ${{ matrix.distro }}
     steps:
