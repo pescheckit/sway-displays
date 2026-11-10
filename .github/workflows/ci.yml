@@ -20,8 +20,8 @@ jobs:
             container: debian:bookworm
             name: Debian Bookworm
           - os: ubuntu-latest
-            container: debian:bullseye
-            name: Debian Bullseye
+            container: debian:trixie
+            name: Debian Trixie
           - os: ubuntu-latest
             container: archlinux:latest
             name: Arch Linux
@@ -35,7 +35,7 @@ jobs:
 
     steps:
       - name: Install dependencies (Debian/Ubuntu)
-        if: matrix.container == 'debian:bookworm' || matrix.container == 'debian:bullseye'
+        if: matrix.container == 'debian:bookworm' || matrix.container == 'debian:trixie'
         run: |
           apt-get update
           apt-get install -y bash jq bc git
