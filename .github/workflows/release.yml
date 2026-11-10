@@ -338,8 +338,17 @@ jobs:
           echo "deb [arch=amd64 signed-by=/usr/share/keyrings/sway-displays.gpg] https://pescheckit.github.io/sway-displays/apt stable main" \
             > /etc/apt/sources.list.d/sway-displays.list
 
-          apt-get update
-          apt-get install -y sway-displays
+          # GitHub Pages can take a few minutes to serve the new repo index;
+          # retry until the expected version is available.
+          for i in $(seq 1 20); do
+            apt-get update
+            if apt-cache madison sway-displays | grep -q " ${VERSION}-"; then
+              break
+            fi
+            echo "sway-displays ${VERSION} not yet in APT repo (attempt $i/20), waiting 30s..."
+            sleep 30
+          done
+          apt-get install -y "sway-displays=${VERSION}-*"
 
       - name: Install from AUR
         if: matrix.method == 'aur'
