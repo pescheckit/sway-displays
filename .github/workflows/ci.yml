@@ -85,3 +85,34 @@ jobs:
 
       - name: Run shellcheck
         run: shellcheck -S warning sway-displays
+
+  # Same apt path as the release's install check, on every push, so mirror or
+  # dependency problems show up before tagging rather than after.
+  deb-install:
+    name: Install .deb (${{ matrix.image }})
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ['ubuntu:24.04', 'debian:12.15']
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    container: ${{ matrix.image }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Configure apt
+        run: bash ci/apt.sh setup
+
+      - name: Build .deb
+        run: |
+          bash ci/apt.sh install build-essential debhelper
+          dpkg-buildpackage -us -uc -b
+
+      - name: Install .deb with its dependencies
+        run: bash ci/apt.sh install ../sway-displays_*_all.deb
+
+      - name: Verify installed package
+        run: |
+          dpkg -s sway-displays
+          sway-displays --version
