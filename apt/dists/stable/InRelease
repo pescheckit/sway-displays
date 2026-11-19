@@ -4,35 +4,35 @@ Hash: SHA512
 Origin: PesCheckIT
 Label: sway-displays
 Codename: stable
-Date: Thu, 19 Nov 2026 13:27:47 UTC
+Date: Thu, 19 Nov 2026 13:57:00 UTC
 Architectures: amd64
 Components: main
 Description: Sway Displays Package Repository
 MD5Sum:
- 76b6c0bcb907508d434182974242947a 889 main/binary-amd64/Packages
- 01c28548c0c5d61ade26228982178978 567 main/binary-amd64/Packages.gz
+ 88c19e6ee834d7e7011147acc451b6ec 889 main/binary-amd64/Packages
+ 56f660f98e8a1c88c1c9c621e9feb27d 565 main/binary-amd64/Packages.gz
  aad8a765d05174ea3213dd55539f1168 122 main/binary-amd64/Release
 SHA1:
- bea1d911b437fa11ff5e7cb0cd0b43455dadc141 889 main/binary-amd64/Packages
- 69dabebbdd8ad49eea6d4183e3ba5fd334ea432b 567 main/binary-amd64/Packages.gz
+ 4c1c56b68283c99e9fc644d486a29eb1476df00b 889 main/binary-amd64/Packages
+ 4d2a5c5d7a3e5bbbd8a11a9f10875d00e8060726 565 main/binary-amd64/Packages.gz
  3f9eda538f65e339d6f2ab4bfd7bb7c5cc890f67 122 main/binary-amd64/Release
 SHA256:
- 9e7ff99b9ce6875cea244466ca265b4dab4d928481b139312f9e4d19b22a6baa 889 main/binary-amd64/Packages
- 3ba6c937d72bc9042f52a8ca105e8b1ac16f73a08f6ae89172180588c4ea2ed6 567 main/binary-amd64/Packages.gz
+ 9a977048b6272dbc2ebf3260373dbdce09c483ef6e605246bddbf6f07c460c0d 889 main/binary-amd64/Packages
+ 4bc7f3848f50f9baf0a43951c319c1ed299a72bb6ed9ea4c23b0ddda03695cc3 565 main/binary-amd64/Packages.gz
  bc97ad16bbdb75180126f38de8244126ace80f3f54b0a9222a1c34b1c9f48457 122 main/binary-amd64/Release
 -----BEGIN PGP SIGNATURE-----
 
-iQIzBAEBCgAdFiEETGCh7mMuezleOhCxHUyQfzn/sSEFAmr++VMACgkQHUyQfzn/
-sSFStxAAitdveUlmw66bCLGZPV852VwmywjaJJFKZBlSt/wK6JHtajRyXEOxyHLn
-MIs9Ud5ILqw2fuiHXNeX2kNtLzO5nB9n8Y82yztLtqrxqQ5C1lB7btrYtE4odaSF
-oxq1spdouD8tKx6OrcqOaEyhCeLnG/BQ3dZej86a42Xw2R7bzQ+Ez9k/TxRgcrKL
-LkntsEFfdGO9q/pMP5q3OTlIoirr7Sz17lE3S/sGQvNbMiuBJm1+mjMNc4yzceF9
-6Q+979bA8COYSpu5js1kMM2KtRyJ2ukHqOVkQ1kVNAS7k6N0VLAGXJmJI7nU04Hu
-ZjYRozCu5ASCsok8LP39zw7aRny62U/WmZZtRYy1qiJ0I43Ejn/R6tpjGgFFFAL6
-GFKzb66nZYh5uLIBKUgm7gfMltlHnJ9Vh2MqDvugCokw0fmjrZFLIG/2XejliPzc
-97TjP0AJxUu2QWRV8VcENISsY2/m5JogqgnopIvek2oOg2BBKr8sQtJHUnHY/FjT
-6KZYUFGKNGHiGoO3PXLjaV91GGR92OxKvPBVrws5Bu4qbwzG9fe2djf4jQi26Id3
-oMQFuBwyOQIplFPOdS0lDLKzFdIYfU3pk9OOZOdKocpckQKXv9Hbb80a/6gyS73H
-yhiI9iB5j6eKwDraf89/GZ676k2Us4lKCVz0+oluBxGUO0tUpWY=
-=JJQt
+iQIzBAEBCgAdFiEETGCh7mMuezleOhCxHUyQfzn/sSEFAmr/ACwACgkQHUyQfzn/
+sSFIyg//cujNaRfNgMchG23nIElhXACwD055RhhqiCB2QBZwd+a9TJ8dKfjxjYb8
+UpVK/SziTv2LoEaRXhkxK3qQxab/f64NVHRaD2ldV0mvQBwMXIgMfnl/oORxupIs
+48qiZeVmlv3GMT4FSH/kEqMJLr+R7WSst6jrfleUsb3O+UL1ug3esGWuZz3XQ1CI
+n+m99pe+5lrWxEJD6FTCYq0iDUMUN/+oNT8X5UhJtVJi01YR6eJ22IWe2qAdESoM
+/g1m2mGUjZU2V/+c7J22VFWVnQBaD25gmFloS8aGYpfr5tA6erS+k0kwB7cs8g+W
+AYFueWOwylZEqJFYvzZ3bUynL9S5Z1B2amdkM/P8mdLnUNY6m6Ib3TaAfD1EUiGb
+2ERYcj+7p6FTc2Y90T9/ZNeGIrEzZ6gY4r5vc0zcWK8pR3nBil5fMk+MJgAncgIh
+0TcIncbv6lMGJiqcgMDqnew5rUiOkUQwcxACxUNPKxi8Dqk+zueFbL3KYZdajGHb
+DpsPgKkYc/94JBgFXRCeC5utsnk2QJPaVRMuJ1OwYm4E0EGZanigMfYBojj4gNsR
+7IxDBq0Zp1gE+gbF9XBq0kFHUUfFlcuP4JVtLIkJnPrqr/dTLYexjVwSHK553M8H
+419F/hfPzQtR8QyHupXebowbjRGY0EhqP/6eHcNz0tqqI/k6mvM=
+=mL53
 -----END PGP SIGNATURE-----
