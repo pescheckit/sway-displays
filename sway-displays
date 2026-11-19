@@ -15,7 +15,7 @@ SETTLE_CHECK_INTERVAL=0.3
 SETTLE_MAX_WAIT=10
 SUBSCRIPTION_RESTART_DELAY=1
 UNMIRROR_SETTLE_DELAY=0.3
-SWAY_MIRROR_VERSION="1.1.0"  # sway-mirror release tag built by install_sway_mirror
+SWAY_MIRROR_VERSION="1.1.1"  # sway-mirror release tag built by install_sway_mirror
 OUTPUT_APPLY_DELAY=0.2
 
 PROFILE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/displays"
