@@ -34,7 +34,7 @@ curl -fsSL https://raw.githubusercontent.com/pescheckit/sway-displays/main/insta
 - Sway
 - `jq`
 - `bc`
-- [sway-mirror](https://github.com/pescheckit/sway-mirror) >= 1.1.0 (only for mirroring; auto-built if missing, which needs [Rust/Cargo](https://rustup.rs/) + wayland/gbm/egl/drm dev libs)
+- [sway-mirror](https://github.com/pescheckit/sway-mirror) >= 1.1.1 (only for mirroring; auto-built if missing, which needs [Rust/Cargo](https://rustup.rs/) + wayland/gbm/egl/drm dev libs)
 
 ## Commands
 

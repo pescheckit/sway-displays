@@ -287,7 +287,7 @@ jobs:
             echo $'\t'"depends = jq"
             echo $'\t'"depends = bc"
             echo $'\t'"depends = sway"
-            echo $'\t'"optdepends = sway-mirror>=1.1.0: for display mirroring support"
+            echo $'\t'"optdepends = sway-mirror>=1.1.1: for display mirroring support"
             echo $'\t'"source = sway-displays-${{ env.VERSION }}.tar.gz::https://github.com/pescheckit/sway-displays/archive/refs/tags/${{ env.VERSION }}.tar.gz"
             echo $'\t'"sha256sums = SKIP"
             echo ""
