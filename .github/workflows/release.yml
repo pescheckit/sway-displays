@@ -315,6 +315,8 @@ jobs:
           - distro: archlinux:base-20261108.0.623074
             method: aur
     runs-on: ubuntu-24.04
+    # Covers the up-to-10-minute wait for the APT repo; a stalled mirror fails instead of hanging
+    timeout-minutes: 25
     container:
       image: ${{ matrix.distro }}
     steps:
@@ -324,10 +326,21 @@ jobs:
           VERSION="${VERSION#v}"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
+      - name: Configure apt
+        if: matrix.method == 'apt'
+        run: |
+          # archive/security.ubuntu.com are slow or unreachable from GitHub runners; use their Azure mirror
+          if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
+            sed -i -E 's#http://(archive|security)\.ubuntu\.com/ubuntu/?#http://azure.archive.ubuntu.com/ubuntu/#' \
+              /etc/apt/sources.list.d/ubuntu.sources
+          fi
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\n' > /etc/apt/apt.conf.d/80-ci
+
       - name: Install from APT repository
         if: matrix.method == 'apt'
         run: |
-          apt-get update
+          # Fail on any missing index; a partial update leaves mismatched versions and broken dependencies
+          apt-get update --error-on=any
           apt-get install -y curl gnupg
 
           # Add signing key
