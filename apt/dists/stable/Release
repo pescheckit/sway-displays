@@ -1,19 +1,19 @@
 Origin: PesCheckIT
 Label: sway-displays
 Codename: stable
-Date: Thu, 19 Nov 2026 12:01:02 UTC
+Date: Thu, 19 Nov 2026 13:27:47 UTC
 Architectures: amd64
 Components: main
 Description: Sway Displays Package Repository
 MD5Sum:
- 8ba1ee655b7135023c1554dd71b6884d 887 main/binary-amd64/Packages
- 23f783e6fddee5ec9320d50563dc8dcd 567 main/binary-amd64/Packages.gz
+ 76b6c0bcb907508d434182974242947a 889 main/binary-amd64/Packages
+ 01c28548c0c5d61ade26228982178978 567 main/binary-amd64/Packages.gz
  aad8a765d05174ea3213dd55539f1168 122 main/binary-amd64/Release
 SHA1:
- 3dfcd57df1b1490a14a7b6d1fec12610237e4f47 887 main/binary-amd64/Packages
- 3d141f07764238c8387b068a842c42cab70a93e8 567 main/binary-amd64/Packages.gz
+ bea1d911b437fa11ff5e7cb0cd0b43455dadc141 889 main/binary-amd64/Packages
+ 69dabebbdd8ad49eea6d4183e3ba5fd334ea432b 567 main/binary-amd64/Packages.gz
  3f9eda538f65e339d6f2ab4bfd7bb7c5cc890f67 122 main/binary-amd64/Release
 SHA256:
- 721c19252e56f856444d335515b5aef9a6ca654cc0a0af3025d2012475470004 887 main/binary-amd64/Packages
- b8a1808c727fd23998cae585f810416f6b49993184c642a7c58af2b70d745d82 567 main/binary-amd64/Packages.gz
+ 9e7ff99b9ce6875cea244466ca265b4dab4d928481b139312f9e4d19b22a6baa 889 main/binary-amd64/Packages
+ 3ba6c937d72bc9042f52a8ca105e8b1ac16f73a08f6ae89172180588c4ea2ed6 567 main/binary-amd64/Packages.gz
  bc97ad16bbdb75180126f38de8244126ace80f3f54b0a9222a1c34b1c9f48457 122 main/binary-amd64/Release
